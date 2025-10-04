@@ -110,12 +110,20 @@ A platform that ingests GitHub repositories corresponding to Hugging Face models
 
 ### Generation Pipeline
 1. Parse user prompt and extract intent
-2. Retrieve model-specific information from Supabase
-3. Select appropriate notebook template
-4. Generate notebook sections using AI
-5. Include model setup code and examples
-6. Add validation and testing sections
-7. Format and return as downloadable Jupyter notebook
+2. Retrieve model-specific information from Supabase (cached reference library)
+3. Select appropriate notebook template and assess model features
+4. Generate step-by-step coding agent instructions in markdown format
+5. **Environment Setup Phase:**
+   - Guide users to add environment variables securely (no API keys in chat)
+   - Provide pip install instructions and dependency setup
+6. **Validation Phase:**
+   - Include minimal model invocation to test setup
+   - Iterate until model runs successfully
+7. **Incremental Usage Phase:**
+   - Determine reasonable path of incremental complexity
+   - Generate examples from basic to advanced usage
+   - Explain each step clearly to the user
+8. Format and return as downloadable Jupyter notebook
 
 ### Supabase Schema Design
 - Row Level Security (RLS) for user data isolation
