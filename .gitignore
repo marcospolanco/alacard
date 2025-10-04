@@ -1,0 +1,25 @@
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Dependencies
+/node_modules
+/venv
+
+# Python
+__pycache__/
+*.pyc
+
+# OS-specific
+.DS_Store
+
+# Build output
+/build
+/dist
+
+# Logs
+*.log
+
+# Local files
+more-prd-details.txt
