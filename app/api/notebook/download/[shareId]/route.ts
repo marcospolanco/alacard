@@ -29,19 +29,34 @@ export async function GET(
       )
     }
 
-    // Increment download count
-    await supabase
-      .from('notebooks')
-      .update({ download_count: (notebook.download_count || 0) + 1 })
-      .eq('share_id', shareId)
+    // Track download event
+    await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/notebook/${shareId}/track`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ event: 'download' })
+    }).catch(err => console.error('Failed to track download:', err))
 
-    // Create filename based on model name
-    const modelName = notebook.hf_model_id.split('/').pop() || 'model'
-    const filename = `alacard-${modelName}-${Date.now()}.ipynb`
+    // Create filename based on model name and recipe details
+    let modelName = 'model'
+    if (notebook.recipe?.modelCard?.name) {
+      modelName = notebook.recipe.modelCard.name.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase()
+    } else {
+      modelName = notebook.hf_model_id.split('/').pop() || 'model'
+    }
 
-    // Set headers for file download
+    // Add topic to filename if available
+    let topicSuffix = ''
+    if (notebook.recipe?.topicCard?.id) {
+      topicSuffix = `-${notebook.recipe.topicCard.id}`
+    }
+
+    const filename = `alacard-${modelName}${topicSuffix}-${Date.now()}.ipynb`
+
+    // Set headers for file download with proper content type
     const headers = new Headers()
-    headers.set('Content-Type', 'application/json')
+    headers.set('Content-Type', 'application/x-ipynb+json')
     headers.set('Content-Disposition', `attachment; filename="${filename}"`)
 
     return new NextResponse(JSON.stringify(notebook.notebook_content, null, 2), {

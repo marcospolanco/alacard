@@ -1,17 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 import { v4 as uuidv4 } from 'uuid'
-import { generateNotebook } from '@/lib/notebook-generator'
-import { POPULAR_MODELS } from '@/lib/presets'
+import { Recipe, NotebookGenerationRequest, NotebookGenerationResponse } from '@/types'
+import { generateNotebookFromRecipe } from '@/lib/notebook-generator'
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json()
-    const { hf_model_id } = body
+    const body = await request.json() as NotebookGenerationRequest
+    const { recipe } = body
 
-    if (!hf_model_id) {
+    if (!recipe || !recipe.modelCard || !recipe.promptCards || !recipe.topicCard ||
+        !recipe.difficultyCard || !recipe.uiComponentCard) {
       return NextResponse.json(
-        { error: 'hf_model_id is required' },
+        { error: 'Complete recipe is required' },
         { status: 400 }
       )
     }
@@ -19,39 +20,24 @@ export async function POST(request: NextRequest) {
     // Generate unique share ID
     const shareId = uuidv4().slice(0, 8)
 
-    // Get model info from presets or fetch from HF API
-    const modelInfo = POPULAR_MODELS.find(m => m.modelId === hf_model_id)
-
-    if (!modelInfo) {
-      // For models not in our preset list, we could fetch from HF API
-      // For now, return a basic model info structure
-      const basicModelInfo = {
-        id: hf_model_id,
-        modelId: hf_model_id,
-        name: hf_model_id.split('/').pop() || hf_model_id,
-        description: 'Custom model from Hugging Face',
-        pipeline_tag: 'text-generation',
-        downloads: 0,
-        likes: 0,
-        tags: [],
-        category: 'custom'
-      }
-    }
-
-    // Generate notebook
-    const notebook = await generateNotebook(hf_model_id)
+    // Generate notebook from recipe
+    const notebook = await generateNotebookFromRecipe(recipe, recipe.modelCard.modelId)
 
     // Prepare notebook data for storage
     const notebookData = {
       share_id: shareId,
-      hf_model_id,
+      hf_model_id: recipe.modelCard.modelId,
+      recipe: recipe,
       notebook_content: notebook,
       metadata: {
-        model_info: modelInfo || basicModelInfo,
+        model_info: recipe.modelCard,
         generated_by: 'alacard',
         generated_at: new Date().toISOString()
       },
-      download_count: 0
+      view_count: 0,
+      download_count: 0,
+      remix_count: 0,
+      is_public: true
     }
 
     // Save to Supabase
@@ -67,16 +53,20 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({
         share_id: shareId,
         notebook_url: `/api/notebook/download/${shareId}`,
-        model_info: modelInfo || basicModelInfo,
+        share_url: `/share/${shareId}`,
+        model_info: recipe.modelCard,
         warning: 'Notebook generated but not saved to database'
       })
     }
 
-    return NextResponse.json({
+    const response: NotebookGenerationResponse = {
       share_id: shareId,
       notebook_url: `/api/notebook/download/${shareId}`,
-      model_info: modelInfo || basicModelInfo
-    })
+      share_url: `/share/${shareId}`,
+      model_info: recipe.modelCard
+    }
+
+    return NextResponse.json(response)
 
   } catch (error) {
     console.error('Notebook generation error:', error)

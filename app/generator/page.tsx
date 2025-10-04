@@ -1,210 +1,178 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useSearchParams } from 'next/navigation'
-import ModelCard from '@/components/ModelCard'
+import { Recipe, RecipeState, ModelCard, PromptCardPack, TopicCard, DifficultyCard, UIComponentCard } from '@/types'
+import RecipeBar from '@/components/RecipeBar'
 import GenerateButton from '@/components/GenerateButton'
-import CategoryFilter from '@/components/CategoryFilter'
 import LoadingSpinner from '@/components/LoadingSpinner'
 import NotebookResult from '@/components/NotebookResult'
-import { POPULAR_MODELS, DEFAULT_MODEL } from '@/lib/presets'
-import { BackendAPI } from '@/lib/backend-api'
-import { useWebSocketProgress } from '@/hooks/useWebSocketProgress'
-import { ModelCard as ModelCardType, NotebookGenerationResponse, TaskStatus } from '@/types'
+import Link from 'next/link'
 
 export default function Generator() {
-  const searchParams = useSearchParams()
-  const [selectedModel, setSelectedModel] = useState<ModelCardType | null>(null)
-  const [popularModels, setPopularModels] = useState<ModelCardType[]>([])
-  const [filteredModels, setFilteredModels] = useState<ModelCardType[]>([])
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
+  const [recipe, setRecipe] = useState<Recipe | null>(null)
   const [isGenerating, setIsGenerating] = useState(false)
-  const [generationResult, setGenerationResult] = useState<NotebookGenerationResponse | null>(null)
-  const [currentTaskId, setCurrentTaskId] = useState<string | null>(null)
+  const [generatedNotebook, setGeneratedNotebook] = useState<any>(null)
+  const [isShuffling, setIsShuffling] = useState(false)
+  const [selectedCardType, setSelectedCardType] = useState<string | null>(null)
+  const [availableCards, setAvailableCards] = useState<any>({})
   const [error, setError] = useState<string | null>(null)
 
-  // Load popular models on mount
+  // Initialize with a shuffled recipe on page load
   useEffect(() => {
-    loadPopularModels()
+    handleShuffle()
   }, [])
 
-  // Handle pre-selected model from URL params
-  useEffect(() => {
-    const modelId = searchParams.get('model')
-    if (modelId && popularModels.length > 0) {
-      const model = popularModels.find(m => m.modelId === modelId)
-      if (model) {
-        setSelectedModel(model)
-      }
-    }
-  }, [searchParams, popularModels])
-
-  // WebSocket progress tracking
-  const { progress, isConnected, usePolling } = useWebSocketProgress(currentTaskId)
-
-  // Handle progress updates
-  useEffect(() => {
-    if (progress) {
-      if (progress.status === 'completed' && progress.share_id) {
-        setIsGenerating(false)
-        setGenerationResult({
-          shareId: progress.share_id,
-          modelId: selectedModel?.modelId || '',
-          modelInfo: selectedModel
-        })
-        setCurrentTaskId(null)
-      } else if (progress.status === 'failed') {
-        setIsGenerating(false)
-        setError(progress.error || 'Generation failed')
-        setCurrentTaskId(null)
-      }
-    }
-  }, [progress, selectedModel])
-
-  const loadPopularModels = async () => {
+  const handleShuffle = async () => {
+    setIsShuffling(true)
+    setError(null)
     try {
-      const models = await BackendAPI.getPopularModels()
-      setPopularModels(models)
-      setFilteredModels(models)
-
-      // Select default model if none selected
-      if (!selectedModel) {
-        const defaultModel = models.find(m => m.modelId === DEFAULT_MODEL)
-        if (defaultModel) {
-            setSelectedModel(defaultModel)
-          }
-        }
+      const response = await fetch('/api/shuffle')
+      if (response.ok) {
+        const data = await response.json()
+        setRecipe(data.recipe)
+      } else {
+        setError('Failed to shuffle recipe. Please try again.')
       }
     } catch (error) {
-      console.error('Error loading popular models:', error)
-      setError('Failed to load models')
+      console.error('Error shuffling recipe:', error)
+      setError('Network error. Please check your connection.')
+    } finally {
+      setIsShuffling(false)
     }
   }
 
-  const handleModelSelect = (model: ModelCardType) => {
-    setSelectedModel(model)
-    setGenerationResult(null)
-    setError(null)
-  }
-
-  const handleCategoryChange = async (category: string | null) => {
-    setSelectedCategory(category)
-
-    if (category) {
-      try {
-        const models = await BackendAPI.searchModels(category)
-        setFilteredModels(models)
-      } catch (error) {
-        console.error('Error searching models:', error)
-        // Fall back to client-side filtering
-        const filtered = popularModels.filter(model =>
-          model.pipeline_tag === category ||
-          model.tags.includes(category)
-        )
-        setFilteredModels(filtered)
-      }
-    } else {
-      setFilteredModels(popularModels)
-    }
-  }
-
-  const handleGenerate = async () => {
-    if (!selectedModel) return
+  const handleGenerateNotebook = async () => {
+    if (!recipe) return
 
     setIsGenerating(true)
     setError(null)
-    setGenerationResult(null)
-
     try {
-      const taskResponse = await BackendAPI.generateNotebook(selectedModel.modelId)
-      setCurrentTaskId(taskResponse.task_id)
+      const response = await fetch('/api/notebook/generate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ recipe }),
+      })
 
+      if (response.ok) {
+        const data = await response.json()
+        setGeneratedNotebook(data)
+      } else {
+        const errorData = await response.json()
+        setError(errorData.error || 'Failed to generate notebook')
+      }
     } catch (error) {
       console.error('Error generating notebook:', error)
-      setError('Failed to generate notebook. Please try again.')
+      setError('Network error. Please try again.')
+    } finally {
       setIsGenerating(false)
-      setCurrentTaskId(null)
     }
   }
 
-  const handleDownload = async () => {
-    if (generationResult) {
-      try {
-        await BackendAPI.downloadNotebook(generationResult.shareId)
-      } catch (error) {
-        console.error('Error downloading notebook:', error)
-        setError('Failed to download notebook')
+  const fetchCards = async (cardType: string) => {
+    try {
+      const response = await fetch(`/api/cards/${cardType}`)
+      if (response.ok) {
+        const data = await response.json()
+        setAvailableCards(prev => ({ ...prev, [cardType]: data.cards }))
+      } else {
+        setError(`Failed to fetch ${cardType} cards`)
+      }
+    } catch (error) {
+      console.error(`Error fetching ${cardType} cards:`, error)
+      setError(`Network error loading ${cardType} cards`)
+    }
+  }
+
+  const handleCardSelect = (cardType: string, card: any) => {
+    if (!recipe) return
+
+    const updatedRecipe = { ...recipe }
+    switch (cardType) {
+      case 'model':
+        updatedRecipe.modelCard = card
+        break
+      case 'prompt':
+        updatedRecipe.promptCards = card
+        break
+      case 'topic':
+        updatedRecipe.topicCard = card
+        break
+      case 'difficulty':
+        updatedRecipe.difficultyCard = card
+        break
+      case 'ui_component':
+        updatedRecipe.uiComponentCard = card
+        break
+    }
+
+    setRecipe(updatedRecipe)
+    setSelectedCardType(null)
+  }
+
+  const handleCardTypeClick = async (cardType: string) => {
+    if (selectedCardType === cardType) {
+      setSelectedCardType(null)
+    } else {
+      setSelectedCardType(cardType)
+      setError(null)
+      if (!availableCards[cardType]) {
+        await fetchCards(cardType)
       }
     }
   }
 
-  const handleShare = () => {
-    if (generationResult) {
-      const shareUrl = `${window.location.origin}/share/${generationResult.share_id}`
-      window.open(shareUrl, '_blank')
-    }
+  if (generatedNotebook) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-purple-50">
+        <div className="max-w-4xl mx-auto px-4 py-8">
+          <div className="text-center mb-8">
+            <h1 className="text-3xl font-bold text-gray-900 mb-4">
+              🎉 Notebook Generated Successfully!
+            </h1>
+            <p className="text-gray-600 mb-6">
+              Your custom notebook has been created using the recipe below.
+            </p>
+          </div>
+
+          <NotebookResult notebook={generatedNotebook} />
+
+          <div className="mt-8 flex gap-4 justify-center">
+            <button
+              onClick={() => {
+                setGeneratedNotebook(null)
+                handleShuffle()
+              }}
+              className="px-6 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors font-medium"
+            >
+              🎲 Generate Another
+            </button>
+            <Link
+              href="/"
+              className="px-6 py-3 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors font-medium"
+            >
+              🏠 Back to Home
+            </Link>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-purple-50">
       <div className="max-w-6xl mx-auto px-4 py-8">
         {/* Header */}
         <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold text-gray-900 mb-2">Alacard Notebook Generator</h1>
-          <p className="text-lg text-gray-600 mb-4">
-            Generate Jupyter notebooks from Hugging Face models with real code examples
+          <h1 className="text-4xl font-bold text-gray-900 mb-4">
+            🎲 Recipe Builder
+          </h1>
+          <p className="text-lg text-gray-600 mb-6 max-w-2xl mx-auto">
+            Mix and match cards to create your perfect AI learning recipe.
+            Shuffle for instant inspiration or customize each card yourself.
           </p>
         </div>
-
-        {/* Generation Status */}
-        {isGenerating && (
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 mb-6">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-500"></div>
-              <span className="text-blue-700 font-medium">
-                Generating notebook...
-                {isConnected && (
-                  <span className="text-green-600 ml-2 text-sm">
-                    ● Connected via WebSocket
-                  </span>
-                )}
-                {usePolling && (
-                  <span className="text-orange-600 ml-2 text-sm">
-                    ● Using polling fallback
-                  </span>
-                )}
-              </span>
-            </div>
-
-            {progress && (
-              <div className="space-y-3">
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-blue-600">
-                    {progress.current_step || 'Processing...'}
-                  </span>
-                  <span className="text-sm text-blue-600 font-medium">
-                    {progress.progress}%
-                  </span>
-                </div>
-
-                <div className="w-full bg-blue-200 rounded-full h-2">
-                  <div
-                    className="bg-blue-500 h-2 rounded-full transition-all duration-300 ease-out"
-                    style={{ width: `${progress.progress}%` }}
-                  ></div>
-                </div>
-
-                {progress.message && (
-                  <p className="text-sm text-blue-600">{progress.message}</p>
-                )}
-
-                {progress.error && (
-                  <p className="text-sm text-red-600">{progress.error}</p>
-                )}
-              </div>
-            )}
-          </div>
-        )}
 
         {/* Error Display */}
         {error && (
@@ -218,73 +186,196 @@ export default function Generator() {
           </div>
         )}
 
-        {/* Generation Result */}
-        {generationResult && !isGenerating && (
+        {/* Shuffle Button */}
+        <div className="text-center mb-8">
+          <button
+            onClick={handleShuffle}
+            disabled={isShuffling}
+            className="px-8 py-4 bg-gradient-to-r from-blue-500 to-purple-500 text-white rounded-lg hover:from-blue-600 hover:to-purple-600 transition-all font-medium text-lg shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isShuffling ? (
+              <>
+                <LoadingSpinner />
+                <span className="ml-2">Shuffling Cards...</span>
+              </>
+            ) : (
+              <>
+                🎲 Shuffle Recipe
+              </>
+            )}
+          </button>
+          <p className="text-sm text-gray-500 mt-2">
+            Get a random but sensible combination of cards
+          </p>
+        </div>
+
+        {/* Recipe Display */}
+        <div className="mb-8">
+          <RecipeBar recipe={recipe} loading={isShuffling} />
+        </div>
+
+        {/* Card Selection */}
+        {recipe && (
           <div className="mb-8">
-            <NotebookResult
-              result={generationResult}
-              onDownload={handleDownload}
-              onShare={handleShare}
-            />
+            <h2 className="text-xl font-semibold text-gray-900 mb-4 text-center">
+              Customize Your Recipe
+            </h2>
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+              {[
+                { type: 'model', label: '🤖 Model', current: recipe.modelCard.name },
+                { type: 'prompt', label: '💬 Prompts', current: recipe.promptCards.name },
+                { type: 'topic', label: '🎯 Topic', current: recipe.topicCard.name },
+                { type: 'difficulty', label: '📚 Level', current: recipe.difficultyCard.name },
+                { type: 'ui_component', label: '🖥️ UI', current: recipe.uiComponentCard.name }
+              ].map(({ type, label, current }) => (
+                <div key={type} className="text-center">
+                  <button
+                    onClick={() => handleCardTypeClick(type)}
+                    className={`w-full p-3 rounded-lg border transition-all ${
+                      selectedCardType === type
+                        ? 'border-blue-500 bg-blue-50 text-blue-700'
+                        : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'
+                    }`}
+                  >
+                    <div className="text-sm font-medium">{label}</div>
+                    <div className="text-xs text-gray-500 mt-1 truncate">{current}</div>
+                  </button>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
-        {!isGenerating && (
-          <>
-            {/* Category Filter */}
-            <div className="mb-8">
-              <h2 className="text-lg font-semibold text-gray-900 mb-4">Filter by Category</h2>
-              <CategoryFilter
-                selectedCategory={selectedCategory}
-                onCategoryChange={handleCategoryChange}
-              />
+        {/* Card Options */}
+        {selectedCardType && availableCards[selectedCardType] && (
+          <div className="mb-8 bg-white rounded-lg p-6 shadow-sm border border-gray-200">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-semibold text-gray-900">
+                Choose {selectedCardType === 'model' ? 'Model' :
+                       selectedCardType === 'prompt' ? 'Prompt Pack' :
+                       selectedCardType === 'topic' ? 'Topic' :
+                       selectedCardType === 'difficulty' ? 'Difficulty' : 'UI Component'}
+              </h3>
+              <button
+                onClick={() => setSelectedCardType(null)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                ✕
+              </button>
             </div>
-
-            {/* Model Selection */}
-            <div className="mb-8">
-              <h2 className="text-lg font-semibold text-gray-900 mb-4">
-                Select a Model {selectedCategory && `(${selectedCategory})`}
-              </h2>
-
-              {filteredModels.length === 0 ? (
-                <div className="text-center py-8 text-gray-500">
-                  No models found for this category.
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {filteredModels.map((model) => (
-                    <ModelCard
-                      key={model.id}
-                      model={model}
-                      isSelected={selectedModel?.id === model.id}
-                      onSelect={() => handleModelSelect(model)}
-                    />
-                  ))}
-                </div>
-              )}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 max-h-96 overflow-y-auto">
+              {availableCards[selectedCardType].map((card: any) => (
+                <button
+                  key={card.id || card.modelId}
+                  onClick={() => handleCardSelect(selectedCardType, card)}
+                  className="p-4 text-left border border-gray-200 rounded-lg hover:border-blue-300 hover:bg-blue-50 transition-all"
+                >
+                  {selectedCardType === 'model' ? (
+                    <>
+                      <div className="font-medium text-gray-900">{card.name}</div>
+                      <div className="text-sm text-gray-600">{card.description}</div>
+                      <div className="text-xs text-gray-500 mt-1">
+                        {card.downloads?.toLocaleString()} downloads • {card.pipeline_tag}
+                      </div>
+                    </>
+                  ) : selectedCardType === 'prompt' ? (
+                    <>
+                      <div className="font-medium text-gray-900">{card.name}</div>
+                      <div className="text-sm text-gray-600">{card.description}</div>
+                      <div className="text-xs text-gray-500 mt-1">{card.prompts.length} prompts</div>
+                    </>
+                  ) : selectedCardType === 'topic' ? (
+                    <>
+                      <div className="font-medium text-gray-900">
+                        {card.icon} {card.name}
+                      </div>
+                      <div className="text-sm text-gray-600">{card.description}</div>
+                    </>
+                  ) : selectedCardType === 'difficulty' ? (
+                    <>
+                      <div className="font-medium text-gray-900">{card.name}</div>
+                      <div className="text-sm text-gray-600">{card.description}</div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="font-medium text-gray-900">{card.name}</div>
+                      <div className="text-sm text-gray-600">{card.description}</div>
+                      <div className="text-xs text-gray-500 mt-1">{card.complexity}</div>
+                    </>
+                  )}
+                </button>
+              ))}
             </div>
-
-            {/* Generate Button */}
-            <div className="text-center">
-              <GenerateButton
-                selectedModel={selectedModel}
-                isGenerating={isGenerating}
-                onGenerate={handleGenerate}
-              />
-            </div>
-          </>
+          </div>
         )}
 
-        {/* Instructions */}
-        <div className="mt-12 bg-blue-50 rounded-lg p-6">
-          <h3 className="font-semibold text-blue-900 mb-3">How It Works</h3>
-          <ol className="list-decimal list-inside space-y-2 text-blue-800">
-            <li>Select a Hugging Face model from the options above</li>
-            <li>Click "Generate Notebook" to create a Jupyter notebook</li>
-            <li>The system fetches the model's README and extracts code examples</li>
-            <li>Download your notebook with environment setup and working examples</li>
-            <li>Share your notebook with others using the generated link</li>
-          </ol>
+        {/* Generate Button */}
+        {recipe && (
+          <div className="text-center">
+            <GenerateButton
+              onClick={handleGenerateNotebook}
+              disabled={isGenerating || !recipe}
+              loading={isGenerating}
+            />
+            <p className="text-sm text-gray-500 mt-2">
+              Generate a customized Jupyter notebook based on your recipe
+            </p>
+          </div>
+        )}
+
+        {/* Loading State */}
+        {(isGenerating || isShuffling) && (
+          <div className="mt-8 text-center">
+            <div className="inline-flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-lg p-6">
+              <LoadingSpinner />
+              <div className="text-left">
+                <div className="text-blue-700 font-medium">
+                  {isGenerating ? 'Generating Notebook...' : 'Shuffling Recipe...'}
+                </div>
+                <div className="text-sm text-blue-600">
+                  {isGenerating
+                    ? 'Creating your custom notebook with README parsing and code generation'
+                    : 'Finding the perfect combination of cards for your recipe'
+                  }
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Tips */}
+        <div className="mt-12 text-center">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">💡 Pro Tips</h3>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-4xl mx-auto">
+            <div className="text-left p-4 bg-white rounded-lg border border-gray-200">
+              <div className="font-medium text-gray-900 mb-2">🎲 Try Shuffle First</div>
+              <div className="text-sm text-gray-600">
+                Get inspired by random combinations. You can always customize individual cards afterward.
+              </div>
+            </div>
+            <div className="text-left p-4 bg-white rounded-lg border border-gray-200">
+              <div className="font-medium text-gray-900 mb-2">🎯 Match Topic to Use Case</div>
+              <div className="text-sm text-gray-600">
+                Choose topics that match your intended application for the most relevant examples.
+              </div>
+            </div>
+            <div className="text-left p-4 bg-white rounded-lg border border-gray-200">
+              <div className="font-medium text-gray-900 mb-2">📚 Start with Beginner</div>
+              <div className="text-sm text-gray-600">
+                If you're new to a model type, begin with the beginner difficulty for the best learning experience.
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Navigation */}
+        <div className="mt-12 text-center">
+          <Link
+            href="/trending"
+            className="text-blue-600 hover:text-blue-700 underline text-sm"
+          >
+            🔥 Browse trending notebooks →
+          </Link>
         </div>
       </div>
     </div>

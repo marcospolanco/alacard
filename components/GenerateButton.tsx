@@ -1,41 +1,41 @@
 'use client'
 
-import { ModelCard } from '@/types'
+import LoadingSpinner from './LoadingSpinner'
 
 interface GenerateButtonProps {
-  selectedModel: ModelCard | null
-  isGenerating: boolean
-  onGenerate: () => void
+  onClick: () => void
+  disabled?: boolean
+  loading?: boolean
 }
 
-export default function GenerateButton({ selectedModel, isGenerating, onGenerate }: GenerateButtonProps) {
-  const isDisabled = !selectedModel || isGenerating
+export default function GenerateButton({ onClick, disabled = false, loading = false }: GenerateButtonProps) {
+  const isDisabled = disabled || loading
 
   return (
     <button
-      onClick={onGenerate}
+      onClick={onClick}
       disabled={isDisabled}
       className={`
         px-8 py-4 rounded-lg font-medium transition-all duration-200
         ${isDisabled
           ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-          : 'bg-blue-500 text-white hover:bg-blue-600 shadow-lg hover:shadow-xl transform hover:scale-105'
+          : 'bg-gradient-to-r from-blue-500 to-purple-500 text-white hover:from-blue-600 hover:to-purple-600 shadow-lg hover:shadow-xl transform hover:scale-105'
         }
-        min-w-[200px]
+        min-w-[250px]
         flex items-center justify-center gap-2
       `}
     >
-      {isGenerating ? (
+      {loading ? (
         <>
-          <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
-          <span>Generating...</span>
+          <LoadingSpinner />
+          <span>Generating Notebook...</span>
         </>
       ) : (
         <>
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
           </svg>
-          <span>Generate Notebook</span>
+          <span>🧪 Generate Notebook</span>
         </>
       )}
     </button>
