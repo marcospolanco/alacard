@@ -1,14 +1,14 @@
-# Alacard — Supabase Sprint (3‑Hour Demo PRD)
+# Alacard — Notebook Generator (3‑Hour Demo PRD)
 
 This is a time‑boxed plan to ship a working demo today using Supabase for persistence and a Figma Make prototype for flows. It trims scope to a single, reliable path and defines concrete deliverables we can show live at the end of the sprint.
 
 ## Objective (Done = Demoable End‑to‑End)
 
-- Live Arena demo (card deck): pick from visual cards for models and prompts, run a head‑to‑head chat on 3 preset prompts, show outputs side‑by‑side, choose a winner, and save a shareable link.
-- Supabase persistence: store the match and results; share page reads from Supabase by `share_id`.
-- “Run as Notebook” button: generates and downloads a runnable `.ipynb` that pulls the latest samples from Hugging Face for the selected HF model (README snippets or widget examples) and includes a verified hello cell.
-- Figma prototype: click‑through of the broader experience (Arena setup → streaming → decision → share → notebook), matching the live demo UI.
-- Remixable recipes: users can click “Remix” on any share page to open the Arena pre‑filled with the same card deck (models + prompts), tweak a card, and generate a new share link.
+- **Notebook Generator**: Simple UI where users select an HF model and generate a downloadable `.ipynb` notebook with real code examples from the model's README.
+- **Supabase persistence**: store generated notebooks and share metadata; share page reads from Supabase by `share_id`.
+- **"Run as Notebook" button**: generates and downloads a runnable `.ipynb` that pulls the latest samples from Hugging Face for the selected HF model (README snippets or widget examples) and includes a verified hello cell.
+- **Figma prototype**: click‑through of the broader experience (model selection → notebook generation → share → download), matching the live demo UI.
+- **Shareable notebooks**: users can click "Share" on any generated notebook to create a shareable link that allows others to download the same notebook.
 
 Non‑goals for the sprint
 
@@ -18,61 +18,58 @@ Non‑goals for the sprint
 
 ## Demo Script (What we will show)
 
-1) Open Figma and narrate the flow (60–90s), highlighting the visual card deck: Model Cards on the left, Prompt Cards on the right, and a Recipe Bar summarizing the selection.
-2) Open the live Arena page, choose two Model Cards (e.g., `openai:gpt-4o-mini` vs `openai:gpt-4o`) and a Prompt Card pack of 3. Run, watch outputs populate side‑by‑side with small per‑card badges (latency, token count).
-3) Pick winner and see a score. Copy share link, open it in a fresh tab and see static results including the recipe summary. Click “Remix” to open Arena with the same cards pre‑selected; swap a Model Card and re‑run.
-4) Click “Run as Notebook” → download `.ipynb` → open locally (Jupyter/VS Code) → run env cell + hello cell.
+1) Open Figma and narrate the flow (60–90s), highlighting the model selection interface with popular HF models and their descriptions.
+2) Open the live notebook generator page, select a model (e.g., `meta-llama/Llama-3.1-8B-Instruct`), click "Generate Notebook", and watch as the system fetches the model's README and extracts code examples.
+3) Download the generated `.ipynb` file, open it locally (Jupyter/VS Code), and run the cells to show a working example with the selected model.
+4) Copy share link, open it in a fresh tab and see the model selection and notebook generation interface pre‑filled with the same model.
 
 ## Thin Architecture (Today)
 
-- Frontend: single‑page Arena + Share using Next.js/React.
-- API routes: server‑side calls OpenAI and/or HF Inference API; returns outputs (batch or SSE if time).
-- Supabase: one table for matches with JSON payloads to avoid joins. Store the selected recipe (card choices) inside `meta.recipe`.
+- Frontend: single‑page Notebook Generator + Share using Next.js/React.
+- API routes: server‑side calls to Hugging Face API for model metadata and README fetching.
+- Supabase: one table for notebooks with JSON payloads to avoid joins. Store the selected model and generation metadata.
 - Notebook generator: server endpoint that fetches latest HF samples (README and/or widget examples) and injects them into a `.ipynb` template; verifies a hello cell locally by simulating a minimal call (string presence or dry run) before returning.
 
 ## Minimal Supabase Schema (SQL)
 
-Use a single table to reduce complexity; store prompts/outputs as JSON.
+Use a single table to reduce complexity; store notebook metadata as JSON.
 
 ```sql
 create extension if not exists pgcrypto;
 
-create table if not exists public.matches (
+create table if not exists public.notebooks (
   id uuid primary key default gen_random_uuid(),
   created_at timestamptz not null default now(),
   share_id text unique not null,
-  model_a text not null,
-  model_b text not null,
-  system_prompt text,
-  prompts jsonb not null,
-  outputs jsonb,           -- { items: [{prompt, a, b, a_ms, b_ms}] }
-  scoring jsonb,           -- { winner: 'A'|'B'|'tie', votes: {...}, rubric: {...} }
-  meta jsonb               -- { client_version, notes, recipe: { models: [model_a, model_b], prompts: [p1,p2,p3], title, emoji } }
+  hf_model_id text not null,
+  notebook_content jsonb not null,
+  metadata jsonb           -- { model_info: {...}, source_readme: string, generated_by: 'alacard' }
 );
 
-create index if not exists matches_share_idx on public.matches(share_id);
+create index if not exists notebooks_share_idx on public.notebooks(share_id);
+create index if not exists notebooks_model_idx on public.notebooks(hf_model_id);
 ```
 
 RLS: disabled for sprint. Only server writes using service key.
 
 ## Endpoints (Shape only)
 
-- `POST /api/match` → create + run
-  - body: `{ model_a, model_b, system_prompt, prompts: [string] }`
-  - returns: `{ share_id, outputs: [{prompt, a, b, a_ms, b_ms}] }`
+- `POST /api/notebook` → generate + save
+  - body: `{ hf_model_id: string }`
+  - returns: `{ share_id, notebook_url: "/api/notebook/download/{share_id}" }`
 
-- `POST /api/match/:share_id/score` → store winner
-  - body: `{ winner: 'A'|'B'|'tie', votes?: {...}, rubric?: {...} }`
-  - returns: `{ ok: true }`
+- `GET /api/notebook/:share_id` → fetch
+  - returns: full `notebook` row JSON with metadata
 
-- `GET /api/match/:share_id` → fetch
-  - returns: full `match` row JSON
-
-- Remix behavior (client‑side): Share page has a “Remix” button that opens `/arena?from={share_id}`. The Arena reads `meta.recipe` from the fetched match JSON and pre‑selects the same Model and Prompt Cards.
-
-- `GET /api/notebook?hf_model={org/name}&task=chat&share_id=...` → download `.ipynb`
+- `GET /api/notebook/download/:share_id` → download `.ipynb`
+  - returns: downloadable Jupyter notebook file (.ipynb format)
   - Behavior: fetch HF model metadata and README; extract first suitable Python snippet or widget text sample; fall back to generic snippet based on `pipeline_tag`.
-  - returns: runnable notebook with env setup, HF sample section, and a hello cell. If `share_id` provided, include a markdown cell describing the recipe used (model selection and prompt set) for traceability.
+  - returns: runnable notebook with env setup, HF sample section, and a hello cell.
+
+- `GET /api/models/popular` → get popular models
+  - returns: `[{ id: string, name: string, description: string, downloads: number, pipeline_tag: string }]`
+
+- Share behavior (client‑side): Share page has a "Generate New" button that opens `/generator?model={hf_model_id}` pre‑filled with the same model.
 
 ## Components (UI + System)
 
@@ -100,23 +97,25 @@ Figma coverage
 
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY` (server only)
-- `OPENAI_API_KEY`
-- `HF_API_TOKEN` (for HF Inference API and rate‑limit friendly README fetch if required)
+- `HF_API_TOKEN` (for HF model API and rate‑limit friendly README fetch)
 
 ## Presets (Hardcoded for Speed)
 
-- Arena models (Model Cards): `openai:gpt-4o-mini` vs `hf:meta-llama/Llama-3.1-8B-Instruct` via HF Inference API (or swap to another stable instruct model).
-- Notebook target model: default to the selected HF model for notebook generation.
-- System prompt: “Helpful assistant; answer concisely.”
-- Prompt Cards (3‑pack):
-  1. “Explain RAG in one paragraph for a product manager.”
-  2. “Write a JSON schema for a blog post with title, body, tags.”
-  3. “List 5 risks of LLM evaluations and a quick mitigation for each.”
+- Popular models (Model Cards): Curated list of popular HF models for quick selection:
+  - `meta-llama/Llama-3.1-8B-Instruct` (General purpose, 8B parameters)
+  - `microsoft/DialoGPT-medium` (Conversational AI)
+  - `distilbert-base-uncased` (Text classification/NER)
+  - `facebook/bart-large-cnn` (Text summarization)
+  - `google/flan-t5-base` (Instruction following)
 
-Recipe starters (visual + fun):
-- “Speed vs Smarts” ⚡🧠: `gpt-4o-mini` vs `Llama‑3.1‑8B‑Instruct`, above 3 prompts.
-- “Structured Output Showdown” 🧩: same models; replace prompt #2 with “Return JSON with keys title, tags, summary.”
-- “Security Lens” 🛡️: swap prompt #3 with “Name 5 prompt‑injection vectors + mitigations.”
+- Default notebook target model: `meta-llama/Llama-3.1-8B-Instruct`
+
+Model categories:
+- **Chat & Dialogue**: conversational models, instruction-following models
+- **Text Generation**: story writing, content creation models
+- **Classification & NER**: text analysis, entity extraction models
+- **Summarization**: long-form text summarization models
+- **Code Generation**: programming and code completion models
 
 ## Notebook Template (Runnable, HF‑Sourced)
 
