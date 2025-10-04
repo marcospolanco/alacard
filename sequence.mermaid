@@ -1,34 +1,46 @@
 sequenceDiagram
     actor User
     participant Frontend as FE (React/Next.js)
-    participant BackendAPI as API (Node.js)
-    participant GenerationService as GenSvc (Python/Claude SDK)
-    participant ExternalServices as (GitHub, Hugging Face)
-    participant ClaudeAgent as Agent
-    participant Database as DB (Supabase)
+    participant Backend as API (Node.js Routes)
+    participant OpenAI
+    participant HuggingFace as HF APIs
+    participant SupabaseDB as DB (PostgreSQL)
 
-    User->>FE: 1. Input GitHub Repo & Recipe (template, topic)
-    FE->>API: 2. POST /api/generate (repo_url, recipe)
-    API->>GenSvc: 3. Request Notebook Generation
+    box "Flow 1: Model Comparison"
+        User->>FE: 1. Select models & prompts
+        FE->>API: 2. POST /api/match with recipe
+        par
+            API->>OpenAI: 3a. Run model A
+            OpenAI-->>API: 4a. Return output A
+        and
+            API->>HF: 3b. Run model B (Inference API)
+            HF-->>API: 4b. Return output B
+        end
+        API->>DB: 5. Store match results & recipe in 'matches' table
+        DB-->>API: 6. Return generated share_id
+        API-->>FE: 7. Return outputs & share_id
+        FE-->>User: 8. Display side-by-side results
 
-    GenSvc->>ExternalServices: 4. Ingest Context (Clone Repo, Fetch HF Metadata)
-    ExternalServices-->>GenSvc: Return Repo Files & Model Info
-
-    GenSvc->>GenSvc: 5. Dynamically Construct System Prompt
-
-    GenSvc->>Agent: 6. Invoke Agent with System Prompt & Tools
-
-    loop Iterative Generation & Testing
-        Agent->>GenSvc: Use Tool (e.g., create_cell, execute_cell)
-        Note over Agent,GenSvc: Python service executes the tool call in a virtual notebook environment.
-        GenSvc-->>Agent: Return Tool Result (stdout, stderr, error)
-        Note over Agent: Agent reflects on the result and decides the next step, correcting errors as they arise.
+        User->>FE: 9. Select a winner for the match
+        FE->>API: 10. POST /api/match/:share_id/score
+        API->>DB: 11. Update 'scoring' field in matches table
     end
 
-    Agent-->>GenSvc: 7. Final Validated Notebook
-    GenSvc->>DB: 8. Save Notebook to 'cookbooks' Table
-    DB-->>GenSvc: Confirm Save
+    box "Flow 2: Share & Remix"
+        User->>FE: 1. Open /share/[share_id] URL
+        FE->>API: 2. GET /api/match/:share_id
+        API->>DB: 3. Fetch match data by share_id
+        DB-->>API: 4. Return match data
+        API-->>FE: 5. Return full recipe & results
+        FE-->>User: 6. Display shared results page
+    end
 
-    GenSvc-->>API: 9. Generation Successful
-    API-->>FE: 10. Notify UI of Completion
-    FE-->>User: 11. Display Generated Notebook
+    box "Flow 3: Notebook Generation"
+        User->>FE: 1. Click 'Download Notebook'
+        FE->>API: 2. GET /api/notebook?hf_model=...
+        API->>HF: 3. Fetch model metadata & README (Model API)
+        HF-->>API: 4. Return model info
+        Note over API: 5. Generate .ipynb file from internal template
+        API-->>FE: 6. Return file for download
+        FE-->>User: 7. Prompt user to save .ipynb file
+    end

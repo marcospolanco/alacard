@@ -34,7 +34,7 @@ Think of it like a recipe. Your main ingredient is the AI model you want to try.
 
 ## 🏗️ Technical Considerations
 
-* Repo ingestion must support private GitHub auth (OAuth + PAT)
+
 * Notebook generation needs safety checks (no hardcoded keys)
 * Supabase must enforce RLS for all user/workspace data
 * Cache Hugging Face model metadata to reduce API hits
