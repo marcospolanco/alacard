@@ -1,15 +1,18 @@
 # Alacard - Notebook Generator Platform
 
-A 3-hour sprint implementation of a notebook generation platform that creates downloadable Jupyter notebooks from Hugging Face models with real code examples.
+A scalable notebook generation platform that creates downloadable Jupyter notebooks from Hugging Face models with real code examples. Built with Next.js frontend and FastAPI backend with Celery background tasks.
 
 ## Features
 
 - **Model Selection**: Browse and select from popular Hugging Face models
-- **Automated Notebook Generation**: Extracts code examples from model READMEs
+- **Asynchronous Notebook Generation**: Background processing with real-time progress updates
+- **Notebook Validation**: Automated syntax checking and runtime validation to ensure notebooks actually run
 - **Downloadable Notebooks**: Get ready-to-run `.ipynb` files
 - **Shareable Results**: Generate share links for generated notebooks
 - **Model Categories**: Filter models by task type (Text Generation, Classification, etc.)
 - **Real Examples**: Uses actual code from model documentation
+- **Real-time Progress**: WebSocket updates with polling fallback
+- **Scalable Architecture**: FastAPI + Celery + Redis for long-running tasks
 
 ## Quick Start
 
@@ -68,10 +71,47 @@ GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO anon;
 npm install
 ```
 
-### 4. Run Development Server
+### 4. Install Python Dependencies
 
 ```bash
-npm run dev
+cd packages/backend
+python3 -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+pip install -r requirements-minimal.txt
+cd ../..
+```
+
+### 5. Run Development Server
+
+**Option A: Quick Start (Recommended)**
+```bash
+./quick-start.sh
+```
+
+**Option B: Full Start Script**
+```bash
+./start.sh
+```
+
+**Option C: Manual Start**
+```bash
+# Start Redis (if not running)
+redis-server --daemonize yes --port 6379
+
+# Start Celery worker
+cd packages/backend
+source venv/bin/activate
+celery -A app.core.celery_app worker --loglevel=info --pool=solo &
+cd ../..
+
+# Start FastAPI backend
+cd packages/backend
+source venv/bin/activate
+uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload &
+cd ../..
+
+# Start Next.js frontend
+pnpm dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000) in your browser.
@@ -90,14 +130,21 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 - `/api/notebook/[shareId]` - Fetch notebook metadata
 - `/api/notebook/download/[shareId]` - Download notebook files
 
-### FastAPI Backend (Planned)
+### FastAPI Backend (Implemented)
 - `GET /api/v1/models/popular` - Get popular HF models
 - `GET /api/v1/models/search` - Search models by category
-- `POST /api/v1/notebook/generate` - Start notebook generation task
+- `POST /api/v1/notebook/generate` - Start asynchronous notebook generation task
 - `GET /api/v1/notebook/task/{task_id}` - Get task status and progress
 - `GET /api/v1/notebook/{share_id}` - Get notebook metadata
 - `GET /api/v1/notebook/download/{share_id}` - Download `.ipynb` file
+- `GET /api/v1/notebook/{share_id}/validation` - Get notebook validation results
 - `WebSocket /ws/progress/{task_id}` - Real-time progress updates
+
+### Celery Background Tasks
+- **Task Queue**: Redis-based distributed task processing
+- **Progress Tracking**: Real-time progress updates via Redis pub/sub
+- **Error Handling**: Comprehensive error management and retry logic
+- **Async Integration**: Seamless async/await support for background processing
 
 ### Database (Supabase)
 - **notebooks** table - Store generated notebooks and metadata
@@ -113,7 +160,7 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 - `GET /api/notebook/[shareId]` - Get notebook metadata
 - `GET /api/notebook/download/[shareId]` - Download `.ipynb` file
 
-### FastAPI Backend (Planned)
+### FastAPI Backend (Implemented)
 - `GET /api/v1/models/popular` - Get popular HF models
 - `GET /api/v1/models/search?category=text-generation` - Search models by category
 - `POST /api/v1/notebook/generate` - Start asynchronous notebook generation
@@ -179,25 +226,47 @@ Generated notebooks follow a consistent 7-cell structure:
 
 ```
 alacard/
-├── app/
-│   ├── api/                 # API routes
-│   │   ├── models/          # Model discovery endpoints
-│   │   └── notebook/        # Notebook generation endpoints
-│   ├── generator/           # Model selection interface
-│   ├── share/[shareId]/     # Share page for notebooks
-│   └── layout.tsx           # Root layout
-├── components/              # React components
+├── packages/backend/                    # FastAPI backend package
+│   ├── app/
+│   │   ├── api/v1/                      # API routes
+│   │   │   ├── endpoints/              # Individual endpoints
+│   │   │   └── __init__.py            # API router
+│   │   ├── core/                        # Core configuration
+│   │   │   ├── config.py               # Settings and config
+│   │   │   ├── database.py             # Database layer
+│   │   │   └── celery_app.py           # Celery configuration
+│   │   ├── models/                      # Pydantic models
+│   │   │   └── notebook.py             # API data models
+│   │   ├── services/                    # Business logic
+│   │   │   ├── huggingface.py          # HF API integration
+│   │   │   ├── notebook_generator.py  # Notebook generation
+│   │   │   └── progress_tracker.py     # Progress tracking
+│   │   ├── tasks/                       # Celery tasks
+│   │   │   └── notebook_tasks.py       # Background tasks
+│   │   └── main.py                      # FastAPI application
+│   ├── requirements-minimal.txt         # Python dependencies
+│   └── .env.example                    # Environment template
+├── app/                                # Next.js frontend
+│   ├── api/                            # Legacy Next.js API routes
+│   ├── generator/                      # Model selection interface
+│   ├── share/[shareId]/               # Share page for notebooks
+│   └── layout.tsx                      # Root layout
+├── components/                         # React components
 │   ├── ModelCard.tsx
 │   ├── GenerateButton.tsx
 │   ├── CategoryFilter.tsx
 │   ├── LoadingSpinner.tsx
 │   └── NotebookResult.tsx
-├── lib/                     # Utilities and presets
-│   ├── supabase.ts
-│   ├── presets.ts
-│   └── notebook-generator.ts
-├── types/                   # TypeScript definitions
-└── public/                  # Static assets
+├── lib/                               # Frontend utilities
+│   ├── backend-api.ts                 # FastAPI client
+│   ├── presets.ts                     # Model presets
+│   ├── supabase.ts                    # Supabase client
+│   └── hooks/                          # React hooks
+│       └── useWebSocketProgress.ts     # WebSocket progress hook
+├── types/                             # TypeScript definitions
+├── quick-start.sh                     # Quick start script
+├── start.sh                           # Full start script
+└── pnpm-workspace.yaml               # Monorepo configuration
 ```
 
 ### Adding New Models
@@ -239,27 +308,52 @@ Edit the notebook generation logic in `lib/notebook-generator.ts` to customize:
 
 ## Technology Stack
 
-- **Frontend**: Next.js 14, React, TypeScript, Tailwind CSS
-- **Backend**: Next.js API Routes, Node.js
-- **Database**: Supabase (PostgreSQL)
-- **External APIs**: Hugging Face Model API, Hugging Face Files API
-- **Styling**: Tailwind CSS with custom components
+### Frontend
+- **Next.js 14**: React framework with TypeScript
+- **Tailwind CSS**: Utility-first CSS framework
+- **WebSocket Client**: Real-time progress tracking with fallback
+
+### Backend
+- **FastAPI**: Modern Python web framework
+- **Celery**: Distributed task queue
+- **Redis**: Message broker and caching
+- **Pydantic**: Data validation and serialization
+
+### Database & Storage
+- **Supabase**: PostgreSQL database with real-time features
+- **PostgreSQL**: Primary data storage for notebooks
+
+### External APIs
+- **Hugging Face**: Model discovery and metadata
+- **Hugging Face Files API**: README content extraction
+
+### Development Tools
+- **pnpm**: Package manager with monorepo support
+- **Poetry**: Python dependency management
+- **Docker**: Containerization support (optional)
 
 ## Limitations & Future Work
 
+### Current Implementation
+- ✅ **Asynchronous Processing**: FastAPI + Celery for long-running tasks
+- ✅ **Real-time Progress**: WebSocket updates with polling fallback
+- ✅ **Scalable Architecture**: Monorepo with separate backend service
+- ✅ **Modern Tech Stack**: FastAPI, Celery, Redis, Next.js 14
+- ✅ **Notebook Validation**: Automated syntax and runtime validation
+- ✅ **Quality Assurance**: Ensures generated notebooks actually execute successfully
+
 ### Current Limitations
 - No user authentication (anonymous access only)
-- Limited to predefined popular models
-- Basic notebook template structure
-- No notebook customization options
+- Limited to predefined popular models (easily extensible)
+- Basic notebook template structure (functional but could be enhanced)
 
 ### Future Enhancements
 - User accounts for personal notebook libraries
 - Enhanced model search and filtering
 - Notebook customization options
 - Integration with Google Colab
-- Background processing for large models
-- Advanced template variations
+- Advanced template variations for different model types
+- Model fine-tuning support
 
 ## License
 

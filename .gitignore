@@ -46,3 +46,7 @@ next-env.d.ts
 
 # Local files
 more-prd-details.txt
+
+# Local notes (ignored by default)
+notes/
+!notes/.gitkeep

@@ -1,7 +1,7 @@
 # Alacard - Technical Strategy (Notebook Generator)
 
 ## 1. Overview
-This document outlines the technical strategy for building "Alacard," a notebook generation platform that creates downloadable Jupyter notebooks from Hugging Face models. This strategy is derived from the [latest PRD](./alacard-prd_2025.10.04.1420.md) and focuses on delivering a working demo with HF model selection, automated notebook generation, and sharing capabilities.
+This document outlines the technical strategy for building "Alacard," a notebook generation platform that creates downloadable Jupyter notebooks from Hugging Face models. This strategy is derived from the [latest PRD](alacard/alacard-prd_2025.10.04.1555.md) and focuses on delivering a working demo with HF model selection, automated notebook generation, and sharing capabilities.
 
 ## 2. Core Architecture & Technical Stack
 The platform is built for a 3-hour demo sprint with a lean, focused architecture.

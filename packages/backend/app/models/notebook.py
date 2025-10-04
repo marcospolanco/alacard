@@ -33,6 +33,7 @@ class TaskStatus(BaseModel):
     message: Optional[str] = None
     share_id: Optional[str] = None
     error: Optional[str] = None
+    validation_summary: Optional[Dict[str, Any]] = None
 
 class NotebookGenerationResponse(BaseModel):
     task_id: str

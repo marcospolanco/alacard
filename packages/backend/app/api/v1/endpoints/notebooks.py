@@ -33,12 +33,17 @@ async def get_task_status(task_id: str):
         raise HTTPException(status_code=404, detail="Task not found")
 
     if result["status"] == "completed":
+        # Include validation information if available
+        validation_summary = result.get("validation", {})
+        current_step = result.get("current_step", "Notebook generated successfully")
+
         return TaskStatus(
             task_id=task_id,
             status="completed",
             progress=100,
-            current_step="Notebook generated successfully",
-            share_id=result["share_id"]
+            current_step=current_step,
+            share_id=result["share_id"],
+            validation_summary=validation_summary if validation_summary else None
         )
     elif result["status"] == "failed":
         return TaskStatus(
@@ -120,3 +125,43 @@ async def download_notebook(share_id: str):
         media_type="application/x-ipynb+json",
         headers={"Content-Disposition": f"attachment; filename={filename}"}
     )
+
+@router.get("/{share_id}/validation")
+async def get_notebook_validation(share_id: str):
+    """Get notebook validation results by share ID"""
+    query = """
+    SELECT metadata, notebook_content
+    FROM notebooks
+    WHERE share_id = %s
+    """
+
+    result = db.execute_single_query(query, (share_id,))
+
+    if not result:
+        raise HTTPException(status_code=404, detail="Notebook not found")
+
+    metadata = result["metadata"]
+    notebook_content = result["notebook_content"]
+
+    # Extract validation information from metadata
+    validation_info = metadata.get("validation", {}) if metadata else {}
+
+    # If no validation data exists, return empty validation
+    if not validation_info:
+        return {
+            "share_id": share_id,
+            "validation_performed": False,
+            "message": "No validation data available - notebook was generated before validation was implemented"
+        }
+
+    return {
+        "share_id": share_id,
+        "validation_performed": True,
+        "overall_status": validation_info.get("overall_status"),
+        "cells_validated": validation_info.get("cells_validated", 0),
+        "syntax_errors": validation_info.get("syntax_errors", 0),
+        "runtime_errors": validation_info.get("runtime_errors", 0),
+        "model_loading_success": validation_info.get("model_loading_success", False),
+        "validation_timestamp": validation_info.get("validation_timestamp"),
+        "validation_details": validation_info
+    }

@@ -1,175 +1,1040 @@
-# Alacard — Notebook Generator (3‑Hour Demo PRD)
+# Alacard — AI Manuals for AI Models
+## Product Requirements Document (Full Vision)
 
-This is a time‑boxed plan to ship a working demo today using Supabase for persistence and a Figma Make prototype for flows. It trims scope to a single, reliable path and defines concrete deliverables we can show live at the end of the sprint.
+**Version:** 1.0  
+**Last Updated:** October 4, 2025  
+**Status:** Vision Document
 
-## Objective (Done = Demoable End‑to‑End)
+---
 
-- **Notebook Generator**: Simple UI where users select an HF model and generate a downloadable `.ipynb` notebook with real code examples from the model's README.
-- **Supabase persistence**: store generated notebooks and share metadata; share page reads from Supabase by `share_id`.
-- **"Run as Notebook" button**: generates and downloads a runnable `.ipynb` that pulls the latest samples from Hugging Face for the selected HF model (README snippets or widget examples) and includes a verified hello cell.
-- **Figma prototype**: click‑through of the broader experience (model selection → notebook generation → share → download), matching the live demo UI.
-- **Shareable notebooks**: users can click "Share" on any generated notebook to create a shareable link that allows others to download the same notebook.
+## 🎯 Executive Summary
 
-Non‑goals for the sprint
+Alacard is the IKEA assembly layer for AI. We're solving the adoption crisis for 2.1M+ AI models on Hugging Face by making it trivially easy to try, learn, and deploy any model through interactive, runnable code notebooks.
 
-- No agentic multi‑step notebook synthesis; we do direct templating using HF sources.
-- No complex multi‑task support; text‑generation/text‑to‑text only.
-- No auth/RLS; if needed, simple anon writes with a service key on server only.
+**The Problem:** When a new AI model launches, teams spend hours wrestling with bad documentation, failed setup attempts, and "vibe checking" models manually. Most of the 2.1M models on Hugging Face never get used because people don't know how to use them. Arbitrary benchmarks don't tell you if a model is actually good for your use case.
 
-## Demo Script (What we will show)
+**The Solution:** A card-based recipe builder that generates customized, educational Jupyter notebooks for any Hugging Face model. Mix Model Cards, Prompt Cards, Topic Cards, Difficulty Cards, and UI Component Cards to create the perfect learning experience. Share, remix, and improve notebooks with the community to strengthen the open source AI ecosystem.
 
-1) Open Figma and narrate the flow (60–90s), highlighting the model selection interface with popular HF models and their descriptions.
-2) Open the live notebook generator page, select a model (e.g., `meta-llama/Llama-3.1-8B-Instruct`), click "Generate Notebook", and watch as the system fetches the model's README and extracts code examples.
-3) Download the generated `.ipynb` file, open it locally (Jupyter/VS Code), and run the cells to show a working example with the selected model.
-4) Copy share link, open it in a fresh tab and see the model selection and notebook generation interface pre‑filled with the same model.
+**The Vision:** Every AI model has a thriving ecosystem of community-created notebooks that make it easy for anyone to try, learn, and deploy. No more wasted hours on setup. No more relying on a handful of major providers. "That was easy" becomes the default experience.
 
-## Thin Architecture (Today)
+---
 
-- Frontend: single‑page Notebook Generator + Share using Next.js/React.
-- API routes: server‑side calls to Hugging Face API for model metadata and README fetching.
-- Supabase: one table for notebooks with JSON payloads to avoid joins. Store the selected model and generation metadata.
-- Notebook generator: server endpoint that fetches latest HF samples (README and/or widget examples) and injects them into a `.ipynb` template; verifies a hello cell locally by simulating a minimal call (string presence or dry run) before returning.
+## 🧠 Problem Statement
 
-## Minimal Supabase Schema (SQL)
+### The AI Model Adoption Crisis
 
-Use a single table to reduce complexity; store notebook metadata as JSON.
+**2.1 million models exist on Hugging Face. Most never get used.**
+
+Why?
+
+1. **Bad/No Documentation**: New models launch with sparse READMEs, broken examples, or no examples at all
+2. **High Friction Setup**: Enterprise teams try a model once, it fails, they move on—no debugging
+3. **Vibe Checking at Scale**: Everyone manually tests models because benchmarks are arbitrary and don't reflect real use cases
+4. **Time Expensive**: Even advanced users spend hours per model on setup, testing, and evaluation
+5. **Hyper-Consolidation**: Teams default to 4-5 major providers (OpenAI, Anthropic, Google, Meta) because it's easier, even when open source models would work better
+
+### The Cost
+
+- **For Developers**: Hours wasted per model attempt; opportunity cost of not finding better models
+- **For Enterprises**: Over-speccing models (paying for GPT-4 when Llama 3.2 would work); vendor lock-in
+- **For Open Source**: Talented developers create amazing models that die in obscurity due to poor onboarding
+- **For Society**: Dangerous consolidation of AI capabilities in a handful of companies
+
+---
+
+## 👥 Target Users
+
+### Primary Personas
+
+**1. The Pragmatic Engineer (Primary)**
+- **Profile**: Mid-senior engineer at a startup/scale-up building AI features
+- **Pain**: New model announced → spends 2 hours trying to get it working → gives up and uses OpenAI again
+- **Goal**: Quickly evaluate if a new model works for their use case without wasting time
+- **Success**: "I tried 3 models in 30 minutes and found one that's 10x cheaper than GPT-4"
+
+**2. The AI Explorer (Secondary)**
+- **Profile**: Data scientist, ML engineer, or advanced hobbyist who lives in model-land
+- **Pain**: Even with expertise, every new model requires manual setup and testing
+- **Goal**: Stay current with new models; build a personal library of working examples
+- **Success**: "I have a collection of 50+ notebooks I've created and remixed that I reference constantly"
+
+**3. The Learning Developer (Growth)**
+- **Profile**: Junior/mid developer learning AI; wants to understand how models actually work
+- **Pain**: Tutorials are either too basic (hello world) or too advanced (assumes PhD knowledge)
+- **Goal**: Learn by doing with progressively complex examples
+- **Success**: "I went from zero to deploying a custom chat UI in a weekend"
+
+### Anti-Personas
+
+- **Pure Researchers**: Need custom training pipelines, not pre-built notebooks
+- **Non-Technical PMs**: Can't run Jupyter notebooks; need no-code tools
+- **Enterprise ML Ops**: Need production deployment tools, not learning materials
+
+---
+
+## 🎨 Core Concept: Card-Based Recipe Building
+
+### The Metaphor
+
+Think of building with AI like cooking. You need:
+- **Proteins** (Model Cards): The main ingredient
+- **Seasonings** (Prompt Cards): How you interact with it
+- **Theme** (Topic Cards): What domain/use case
+- **Skill Level** (Difficulty Cards): Beginner to advanced
+- **Presentation** (UI Component Cards): How you serve it
+
+Mix these cards together to create a "recipe" that generates a customized notebook.
+
+### The Five Card Types
+
+#### 1. Model Cards 🦙
+Browse and search 2.1M+ Hugging Face models as visual cards
+- **Display**: Model name, emoji, category, downloads, parameters, license
+- **Metadata**: Pipeline tag, task type, framework, model size
+- **Curation**: Featured models, trending models, category filters
+- **Search**: Fuzzy search by name, task, or description
+
+#### 2. Prompt Card Packs 💬
+Themed sets of 3-5 prompts that define how you interact with the model
+- **Quick Start**: Basic hello world examples
+- **Real World**: Practical use cases (summarization, Q&A, classification)
+- **Creative**: Fun, unexpected prompts (meme generation, story writing)
+- **Domain-Specific**: Healthcare, legal, finance, education
+- **Editable**: Users can modify prompts inline before generating
+
+#### 3. Topic Cards 🎯
+Theme the examples around a specific domain
+- 🍞 Sourdough bread making
+- 🎮 Game development
+- 📊 Data analysis
+- 🎨 Creative writing
+- 💼 Business use cases
+- 🏥 Healthcare
+- ⚖️ Legal
+- 🎓 Education
+
+**Why This Matters**: Generic "hello world" examples don't help you understand if a model works for YOUR use case. Topic cards make examples immediately relevant.
+
+#### 4. Difficulty Cards 📚
+Adjust complexity and explanation depth
+- **🌱 Beginner**: Lots of comments, step-by-step explanations, simple examples
+- **🌿 Intermediate**: Moderate complexity, assumes basic Python knowledge
+- **🌳 Advanced**: Complex examples, minimal hand-holding, production patterns
+
+**Why This Matters**: The same model needs different tutorials for different skill levels. Stop writing for PhD researchers when most users are pragmatic engineers.
+
+#### 5. UI Component Cards 🖥️
+Choose how to interact with the model
+- **Chat Interface**: Conversational UI with message history
+- **Text Completion**: Single input → output
+- **Streaming Responses**: Real-time token streaming
+- **Batch Processing**: Process multiple inputs efficiently
+- **API Endpoint**: FastAPI/Flask wrapper
+- **Gradio Demo**: Interactive web UI
+- **Streamlit App**: Full dashboard
+
+**Why This Matters**: You're not just learning the model—you're building something you can actually use.
+
+---
+
+## ✨ Core Features
+
+### 1. Shuffle: Remove Analysis Paralysis
+
+**The Problem**: Staring at 2.1M models is overwhelming. Where do you even start?
+
+**The Solution**: "Deal me a hand" button that generates a random but sensible recipe combination.
+
+**How It Works**:
+- Pre-curated "good" combinations based on compatibility
+- Weighted randomness (popular models appear more often)
+- Ensures cards are compatible (e.g., chat UI + conversational model)
+- Users can lock certain cards and shuffle the rest
+
+**Why It Matters**: Removes decision fatigue. Gets users started in seconds. Discovery through serendipity.
+
+### 2. Generate: Create Customized Notebooks
+
+**The Problem**: Generic tutorials don't match your use case or skill level.
+
+**The Solution**: Generate notebooks customized by your recipe cards.
+
+**How It Works**:
+1. User selects cards (or shuffles)
+2. Recipe Bar shows current selection
+3. Click "Generate Notebook"
+4. Server fetches model README from Hugging Face
+5. Extracts code examples and documentation
+6. Customizes based on difficulty (comments, explanations)
+7. Reframes examples around topic (sourdough → model's task)
+8. Adds UI component code (chat interface, API wrapper, etc.)
+9. Returns downloadable `.ipynb` file
+
+**Notebook Structure**:
+```
+1. Title: "Alacard | {model} - {topic} ({difficulty})"
+2. Recipe Summary: Visual cards showing what was selected
+3. Environment Setup: Installs based on UI component
+4. Hello World: Minimal working example
+5. Explained Examples: Tailored to difficulty level
+6. Topic-Specific Examples: Customized to selected topic
+7. UI Component: Full implementation (chat, API, etc.)
+8. Next Steps: Links to remix, share, and fork
+```
+
+**Why It Matters**: One model → infinite tutorials based on who's learning and what they're building.
+
+### 3. Share: Community-Driven Improvement
+
+**The Problem**: Everyone wastes time solving the same setup problems.
+
+**The Solution**: Every notebook gets a shareable link. Others can view, download, and remix.
+
+**How It Works**:
+- Click "Share" → get unique URL
+- Share page shows recipe cards + download button
+- Public gallery of shared notebooks
+- Search and filter by model, topic, difficulty
+- Track views and downloads
+
+**Why It Matters**: Your 2 hours of setup saves 1000 other developers 2 hours each. Network effects.
+
+### 4. Remix: Fork and Improve
+
+**The Problem**: Existing tutorials are close but not quite right for your use case.
+
+**The Solution**: Fork any shared notebook, modify the recipe, regenerate.
+
+**How It Works**:
+- Click "Remix" on any shared notebook
+- Opens generator with pre-filled cards
+- User swaps cards (e.g., change difficulty from beginner to advanced)
+- Regenerates with new customization
+- Tracks provenance (forked from X)
+- Increments remix counter on original
+
+**Why It Matters**: GitHub-style forking for AI tutorials. Community improvement loop.
+
+### 5. Trending: Surface the Best
+
+**The Problem**: How do you know which notebooks are actually good?
+
+**The Solution**: Community curation through usage metrics.
+
+**How It Works**:
+- Track remix count, downloads, views
+- "Trending" page shows most remixed notebooks
+- Filter by model, topic, difficulty, recency
+- "Official" badge for model creators who publish notebooks
+- User ratings and comments (post-MVP)
+
+**Why It Matters**: Crowdsourced quality. The best tutorials rise to the top.
+
+---
+
+## 🏗️ Technical Architecture
+
+### High-Level Stack
+
+**Frontend**:
+- Next.js 14 (App Router)
+- React Server Components
+- Tailwind CSS for styling
+- Figma Make for prototyping
+
+**Backend**:
+- Next.js API routes (serverless)
+- Supabase (PostgreSQL + Auth + Storage)
+- Hugging Face API for model metadata
+- OpenAI/Anthropic for notebook customization (optional)
+
+**Infrastructure**:
+- Vercel for hosting
+- Supabase for database + auth
+- GitHub for version control
+- Plausible/PostHog for analytics
+
+### Database Schema
 
 ```sql
-create extension if not exists pgcrypto;
-
-create table if not exists public.notebooks (
+-- Core tables
+create table public.notebooks (
   id uuid primary key default gen_random_uuid(),
   created_at timestamptz not null default now(),
   share_id text unique not null,
+  
+  -- Recipe data
+  recipe jsonb not null,  -- { model_card, prompt_cards, topic, difficulty, ui_component }
   hf_model_id text not null,
-  notebook_content jsonb not null,
-  metadata jsonb           -- { model_info: {...}, source_readme: string, generated_by: 'alacard' }
+  
+  -- Generated content
+  notebook_content jsonb not null,  -- Full .ipynb JSON
+  
+  -- Metadata
+  metadata jsonb,  -- { model_info, source_readme, generated_by, forked_from }
+  
+  -- Community metrics
+  view_count int default 0,
+  download_count int default 0,
+  remix_count int default 0,
+  
+  -- User association (post-auth)
+  user_id uuid references auth.users(id),
+  is_public boolean default true
 );
 
-create index if not exists notebooks_share_idx on public.notebooks(share_id);
-create index if not exists notebooks_model_idx on public.notebooks(hf_model_id);
+-- Indexes
+create index notebooks_share_idx on public.notebooks(share_id);
+create index notebooks_model_idx on public.notebooks(hf_model_id);
+create index notebooks_remix_idx on public.notebooks(remix_count desc);
+create index notebooks_user_idx on public.notebooks(user_id);
+
+-- Card presets (for curation)
+create table public.card_presets (
+  id uuid primary key default gen_random_uuid(),
+  card_type text not null,  -- 'model', 'prompt', 'topic', 'difficulty', 'ui_component'
+  card_data jsonb not null,
+  is_featured boolean default false,
+  sort_order int default 0
+);
+
+-- User collections (post-MVP)
+create table public.collections (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references auth.users(id),
+  name text not null,
+  description text,
+  notebook_ids uuid[] default array[]::uuid[]
+);
 ```
 
-RLS: disabled for sprint. Only server writes using service key.
+### API Endpoints
 
-## Endpoints (Shape only)
+**Notebook Generation**:
+```
+POST /api/notebook/generate
+  body: { recipe: { model_card, prompt_cards, topic, difficulty, ui_component } }
+  returns: { share_id, notebook_url, download_url }
 
-- `POST /api/notebook` → generate + save
-  - body: `{ hf_model_id: string }`
-  - returns: `{ share_id, notebook_url: "/api/notebook/download/{share_id}" }`
+GET /api/notebook/:share_id
+  returns: { recipe, notebook_content, metadata, metrics }
 
-- `GET /api/notebook/:share_id` → fetch
-  - returns: full `notebook` row JSON with metadata
+GET /api/notebook/download/:share_id
+  returns: .ipynb file (Content-Type: application/x-ipynb+json)
+```
 
-- `GET /api/notebook/download/:share_id` → download `.ipynb`
-  - returns: downloadable Jupyter notebook file (.ipynb format)
-  - Behavior: fetch HF model metadata and README; extract first suitable Python snippet or widget text sample; fall back to generic snippet based on `pipeline_tag`.
-  - returns: runnable notebook with env setup, HF sample section, and a hello cell.
+**Recipe Building**:
+```
+GET /api/shuffle
+  query: { locked_cards?: string[] }
+  returns: { recipe: {...} }
 
-- `GET /api/models/popular` → get popular models
-  - returns: `[{ id: string, name: string, description: string, downloads: number, pipeline_tag: string }]`
+GET /api/cards/:type
+  query: { search?, category?, limit?, offset? }
+  returns: { cards: [...], total }
 
-- Share behavior (client‑side): Share page has a "Generate New" button that opens `/generator?model={hf_model_id}` pre‑filled with the same model.
+GET /api/models/search
+  query: { q, task?, sort?, limit? }
+  returns: { models: [...] }
+```
 
-## Env Vars
+**Community**:
+```
+POST /api/notebook/:share_id/remix
+  body: { modified_recipe?: {...} }
+  returns: { share_id, notebook_url }
 
-- `NEXT_PUBLIC_SUPABASE_URL`
-- `SUPABASE_SERVICE_ROLE_KEY` (server only)
-- `HF_API_TOKEN` (for HF model API and rate‑limit friendly README fetch)
+GET /api/trending
+  query: { timeframe?, model?, topic?, difficulty?, limit? }
+  returns: { notebooks: [...] }
 
-## Presets (Hardcoded for Speed)
+POST /api/notebook/:share_id/track
+  body: { event: 'view' | 'download' | 'remix' }
+  returns: { success: boolean }
+```
 
-- Popular models (Model Cards): Curated list of popular HF models for quick selection:
-  - `meta-llama/Llama-3.1-8B-Instruct` (General purpose, 8B parameters)
-  - `microsoft/DialoGPT-medium` (Conversational AI)
-  - `distilbert-base-uncased` (Text classification/NER)
-  - `facebook/bart-large-cnn` (Text summarization)
-  - `google/flan-t5-base` (Instruction following)
+### Notebook Generation Pipeline
 
-- Default notebook target model: `meta-llama/Llama-3.1-8B-Instruct`
+**Phase 1: Fetch Model Data**
+```javascript
+1. GET https://huggingface.co/api/models/{model_id}
+   → Extract: pipeline_tag, tags, license, downloads, sha
 
-Model categories:
-- **Chat & Dialogue**: conversational models, instruction-following models
-- **Text Generation**: story writing, content creation models
-- **Classification & NER**: text analysis, entity extraction models
-- **Summarization**: long-form text summarization models
-- **Code Generation**: programming and code completion models
+2. GET https://huggingface.co/{model_id}/raw/{sha}/README.md
+   → Extract: Python code blocks, usage examples, requirements
 
-## Notebook Template (Runnable, HF‑Sourced)
+3. Fallback: If README lacks examples, use generic template based on pipeline_tag
+```
 
-Cells (generated server‑side):
-- Markdown title: “Alacard | {hf_model_id} Quickstart” with model license + link to HF card.
-- Code: env setup; installs `transformers`, `huggingface_hub` (and `requests` if using Inference API).
-- Code (hello cell): minimal call using HF Inference API or `transformers` pipeline chosen by `pipeline_tag` (text‑generation/text2text).
-- Markdown: “Samples from Model Card” with the first extracted example prompt/code.
-- Code: runnable sample adapted from README/widget (sanitized for keys/paths).
-- Markdown: “Recipe used” showing selected models and prompts (if `share_id` set).
-- Markdown: next steps + link back to share page.
+**Phase 2: Customize Content**
+```javascript
+1. Adjust complexity based on difficulty card:
+   - Beginner: Add extensive comments, step-by-step explanations
+   - Intermediate: Moderate comments, assume basic knowledge
+   - Advanced: Minimal comments, production patterns
 
-Sourcing logic (order):
-1) GET `https://huggingface.co/api/models/{hf_model_id}` to read `pipeline_tag`, `tags`, and commit SHA.
-2) Fetch README at the latest commit (`.../resolve/{sha}/README.md`); extract the first Python fenced block; if none, extract the first code‑fenced text prompt.
-3) If README lacks examples, fallback to a generic snippet based on `pipeline_tag`.
-4) Inject model id and sample into the notebook cells.
+2. Reframe examples based on topic card:
+   - Replace generic text with topic-specific examples
+   - E.g., "Analyze this text" → "Analyze this sourdough recipe"
 
-## UI Deliverables (Today)
+3. Add UI component based on UI component card:
+   - Chat: Add message history, conversation loop
+   - API: Add FastAPI wrapper with endpoints
+   - Gradio: Add interactive web UI code
+```
 
-- Arena page (Card Deck): two Model Cards (selectable tiles with emoji + short blurb), a 3‑pack of Prompt Cards (chips with edit affordance), Run button, outputs side‑by‑side with mini badges (ms, tokens), Winner selector, “Share link,” “Remix,” and “Run as Notebook.”
-- Share page: read‑only view of outputs and winner; copy link.
-- Share page: read‑only view of outputs, winner, and a Recipe summary (cards rendered as tiles). Primary CTA: “Remix this recipe.”
-- Figma: matching flow with simple visual polish, annotated with captions, including Model/Prompt card visuals and a Recipe summary bar.
+**Phase 3: Generate Notebook**
+```javascript
+1. Create .ipynb JSON structure with cells:
+   - Markdown: Title + recipe summary
+   - Code: Environment setup (pip installs)
+   - Code: Hello world example
+   - Markdown: Explanation (tailored to difficulty)
+   - Code: Topic-specific examples
+   - Code: UI component implementation
+   - Markdown: Next steps + remix link
 
-Card primitives (for this sprint):
-- Model Card: title, provider icon (OpenAI/HF), subtitle (e.g., “fast”/“open”), emoji, and selection state.
-- Prompt Card: prompt text (single line truncation), emoji, and editable icon to tweak text inline.
-- Recipe Bar: compact summary of 2 models + 3 prompts with a fun emoji and title.
+2. Validate notebook:
+   - Check for syntax errors
+   - Ensure no hardcoded API keys
+   - Verify imports are installable
 
-## Timeline (Now → +3h)
+3. Save to Supabase + return download link
+```
 
-- 0:00–0:20 Setup
-  - Create Supabase table; seed one test match; set env vars.
-  - Scaffold routes: `/arena`, `/share/[share_id]`, `/api/*`.
+---
 
-- 0:20–1:05 Arena “happy path”
-  - Hardcode presets; implement `POST /api/match` calling OpenAI and/or HF Inference API.
-  - Render Model/Prompt Cards (static tiles); wire selection state to request payload and also serialize into `meta.recipe`.
-  - Render side‑by‑side outputs; compute latencies; allow winner select; save via `/score`.
+## 🎨 User Experience
 
-- 1:05–1:50 Notebook generator (HF)
-  - Implement `GET /api/notebook` to: fetch HF metadata, fetch README at latest commit, extract snippet, pick pipeline, inject model id, and return `.ipynb`.
-  - Verify hello cell locally by constructing payload without sending keys (dry run or static validation).
+### First-Time User Flow
 
-- 1:50–2:20 Share page
-  - Implement `GET /api/match/:share_id` + `/share/[share_id]` page.
-  - Render Recipe summary and add “Remix” CTA linking to `/arena?from={share_id}`.
+**Goal**: "That was easy" feeling in under 2 minutes
 
-- 2:20–2:45 Figma polish + demo rehearsal
-  - Align Figma frames to working UI; add captions; include card visuals and Recipe bar; script the 90‑second talk track.
+1. **Land on homepage**
+   - Hero: "AI Manuals for AI Models"
+   - Subhead: "Generate runnable code notebooks for any of 2.1M+ models on Hugging Face"
+   - CTA: "Try Shuffle" (primary) or "Browse Models" (secondary)
 
-- 2:45–3:00 Buffer & fail‑safes
-  - Add static fallback outputs if APIs fail; pre‑generate one share link and one notebook file.
+2. **Click "Try Shuffle"**
+   - Animated card dealing
+   - 5 cards appear: Model, Prompt, Topic, Difficulty, UI Component
+   - Recipe Bar shows summary
+   - CTA: "Generate Notebook" (glowing, prominent)
 
-## Risks & Fast Fallbacks
+3. **Click "Generate Notebook"**
+   - Loading state: "Fetching {model} from Hugging Face..."
+   - Progress: "Extracting code examples..."
+   - Progress: "Customizing for {topic}..."
+   - Success: "Your notebook is ready!"
+   - Auto-downloads .ipynb file
 
-- HF README lacks runnable snippet → fall back to generic `transformers` or Inference API snippet using `pipeline_tag`.
-- Inference fails or rate‑limited → serve pre‑baked outputs; banner “live inference unavailable; showing cached result.”
-- Supabase write fails → write to local memory (in‑process map) and continue demo; share link maps to memory fallback.
-- Time crunch → remove winner voting; just display outputs and a static winner.
- - Card UI too heavy → fall back to dropdowns and textareas, but keep the Recipe summary and Remix link so the concept still demos.
+4. **Open notebook locally**
+   - Jupyter/VS Code opens
+   - Beautiful formatted cells
+   - Run first cell → works immediately
+   - "Wow, that was actually easy"
 
-## Success Criteria (Sprint)
+5. **Share**
+   - Click share link in notebook
+   - Opens share page
+   - Copy URL, share with team
+   - Teammate clicks "Remix" → modifies recipe → regenerates
 
-- Live demo runs start‑to‑finish without manual data entry.
-- One copy‑paste share link loads identical results on a fresh browser.
-- Notebook opens and the hello cell returns a completion.
-- “Remix” from a share page opens Arena with preselected Model/Prompt Cards.
+### Power User Flow
 
-## After Sprint (Next 1–2 days)
+**Goal**: Build a personal library of 50+ notebooks
 
-- Add RLS + simple auth; convert anon writes to user‑scoped writes.
-- Add HF Inference adapter and one OSS model preset.
-- Add basic evaluator rubric and export of an HTML report.
- - Community Recipes: publish, fork, and remix recipe cards; add lightweight provenance trail (source share_id) to `meta.recipe`.
- - Visual polish: animations for card selection, confetti on winner selection, themed palettes per recipe.
+1. **Browse models by category**
+   - Filter: Chat models, 7B-13B params, Apache 2.0 license
+   - Sort by: Downloads, trending, recently updated
 
-Reference: full product PRD lives at `alacard/alacard-prd.md`.
+2. **Select model card**
+   - See model details, stats, license
+   - Click "Add to Recipe"
+
+3. **Manually select other cards**
+   - Choose "Real World" prompt pack
+   - Choose "Healthcare" topic
+   - Choose "Advanced" difficulty
+   - Choose "API Endpoint" UI component
+
+4. **Generate + customize**
+   - Download notebook
+   - Edit prompts inline in notebook
+   - Re-run cells with modifications
+
+5. **Share back to community**
+   - Click "Share" in notebook
+   - Add title: "Llama 3.2 Medical Q&A API"
+   - Add description
+   - Publish → appears in trending
+
+6. **Track remixes**
+   - Dashboard shows your notebooks
+   - See remix count, downloads, views
+   - Get notifications when someone remixes your work
+
+---
+
+## 🚀 Go-to-Market Strategy
+
+### Phase 1: Hackathon Launch (Week 1)
+
+**Goal**: Validate core concept with early adopters
+
+**Tactics**:
+- Launch at Supabase hackathon
+- Demo video showing shuffle → generate → share flow
+- Pre-generate 10 "official" notebooks for popular models
+- Post on Twitter, HN, Reddit r/MachineLearning
+- Target: 100 notebooks generated, 10 shared
+
+**Success Metrics**:
+- 50+ unique users
+- 100+ notebooks generated
+- 10+ shared notebooks
+- 5+ remixes
+- Qualitative feedback: "This is actually useful"
+
+### Phase 2: Community Seeding (Weeks 2-4)
+
+**Goal**: Build initial library of high-quality notebooks
+
+**Tactics**:
+- Reach out to model creators on HF
+- Offer to create "official" notebooks for their models
+- Partner with 5-10 popular models to create comprehensive notebook sets
+- Create "Notebook of the Week" showcase
+- Build trending page
+- Add search and filtering
+
+**Success Metrics**:
+- 500+ notebooks generated
+- 50+ shared notebooks
+- 100+ remixes
+- 10+ "official" model creator partnerships
+- 1000+ unique visitors
+
+### Phase 3: Growth Loop (Months 2-3)
+
+**Goal**: Activate network effects
+
+**Tactics**:
+- SEO: Target long-tail searches like "{model_name} tutorial"
+- Social proof: Show remix counts, trending notebooks
+- Email: Weekly digest of trending notebooks
+- Integrations: "Open in Alacard" button on HF model pages (if possible)
+- Content: Blog posts about underrated models with notebook links
+
+**Success Metrics**:
+- 5000+ notebooks generated
+- 500+ shared notebooks
+- 1000+ remixes
+- 10,000+ unique visitors
+- 30% week-over-week growth
+
+### Phase 4: Monetization (Months 4-6)
+
+**Goal**: Sustainable business model
+
+**Tactics**:
+- Freemium: 10 notebooks/month free, unlimited for $9/mo
+- Teams: Shared workspaces, private notebooks, $29/mo per seat
+- Enterprise: Custom model presets, SSO, priority support, custom pricing
+- API: Programmatic notebook generation for platforms
+
+**Success Metrics**:
+- 1000+ paid users
+- $10K+ MRR
+- 5+ enterprise customers
+- 50,000+ notebooks generated
+
+---
+
+## 📊 Success Metrics
+
+### North Star Metric
+**Notebooks Generated Per Week** (leading indicator of value creation)
+
+### Key Metrics
+
+**Engagement**:
+- Daily/Weekly/Monthly Active Users
+- Notebooks generated per user
+- Time to first notebook (target: < 2 min)
+- Return rate (users who generate 2+ notebooks)
+
+**Community**:
+- Shared notebooks (% of total generated)
+- Remix rate (% of shared notebooks that get remixed)
+- Trending notebook views
+- User-contributed card presets
+
+**Quality**:
+- Notebook download rate (% of generated that get downloaded)
+- Notebook run rate (% that run without errors - tracked via opt-in telemetry)
+- User satisfaction (CSAT survey after generation)
+- Support ticket volume
+
+**Growth**:
+- Week-over-week user growth
+- Viral coefficient (invites/shares per user)
+- Organic vs. paid traffic
+- Model diversity (% of notebooks using non-top-10 models)
+
+**Business** (post-monetization):
+- Free → Paid conversion rate
+- Monthly Recurring Revenue (MRR)
+- Customer Acquisition Cost (CAC)
+- Lifetime Value (LTV)
+- Churn rate
+
+---
+
+## 🛣️ Roadmap
+
+### MVP (Hackathon - Week 1)
+- ✅ Card-based recipe builder
+- ✅ Shuffle feature
+- ✅ Notebook generation for HF models
+- ✅ Share links
+- ✅ Basic remix functionality
+- ✅ 5 curated card types with 5-10 options each
+
+### V1.0 (Month 1)
+- 🔲 User authentication (Supabase Auth)
+- 🔲 User dashboard (my notebooks)
+- 🔲 Trending page
+- 🔲 Search and filtering
+- 🔲 Remix tracking and provenance
+- 🔲 Model search (all 2.1M HF models)
+- 🔲 Expanded card library (50+ options per type)
+
+### V1.5 (Month 2)
+- 🔲 User collections (organize notebooks)
+- 🔲 Inline notebook editing (modify before download)
+- 🔲 Custom card creation (user-defined prompts, topics)
+- 🔲 Collaborative workspaces
+- 🔲 Comments and ratings
+- 🔲 Email notifications (remix alerts, trending)
+
+### V2.0 (Month 3)
+- 🔲 Advanced customization (edit templates)
+- 🔲 Multi-model notebooks (compare 2+ models)
+- 🔲 Evaluation frameworks (automatic testing)
+- 🔲 Export to Colab, Kaggle, Deepnote
+- 🔲 API for programmatic generation
+- 🔲 Jupyter extension (generate from IDE)
+
+### V3.0 (Month 6+)
+- 🔲 Fine-tuning recipes (not just inference)
+- 🔲 Dataset integration (use your own data)
+- 🔲 Production deployment recipes (Docker, K8s)
+- 🔲 Cost optimization analysis
+- 🔲 Model recommendation engine
+- 🔲 Enterprise features (SSO, audit logs, private models)
+
+---
+
+## 🎯 Competitive Landscape
+
+### Direct Competitors
+
+**Hugging Face Spaces**
+- Strength: Integrated with HF, large community
+- Weakness: Focused on demos, not learning; no customization
+- Differentiation: We're educational, customizable, and notebook-focused
+
+**Google Colab Templates**
+- Strength: Pre-made notebooks, free compute
+- Weakness: Generic, not model-specific, no community features
+- Differentiation: We're model-first, customizable, and community-driven
+
+**Anthropic/OpenAI Cookbooks**
+- Strength: High-quality, well-documented
+- Weakness: Only for their models, not customizable
+- Differentiation: We support all 2.1M HF models, community-created
+
+### Indirect Competitors
+
+**GitHub Repos with Examples**
+- Strength: Comprehensive, version-controlled
+- Weakness: Hard to discover, not standardized, no customization
+- Differentiation: We're discoverable, standardized, and customizable
+
+**YouTube Tutorials**
+- Strength: Visual, engaging
+- Weakness: Not interactive, can't customize, outdated quickly
+- Differentiation: We're runnable code, always up-to-date, customizable
+
+**Model Documentation**
+- Strength: Authoritative, detailed
+- Weakness: Often sparse, not beginner-friendly, no examples
+- Differentiation: We generate the docs that should exist
+
+### Competitive Moat
+
+1. **Network Effects**: More notebooks → more users → more notebooks
+2. **Community Curation**: Best tutorials rise through remixes
+3. **Customization Engine**: Difficulty + topic + UI = infinite variations
+4. **Model Coverage**: 2.1M models vs. competitors' dozens
+5. **Time to Value**: 2 minutes vs. 2 hours
+
+---
+
+## 💰 Business Model
+
+### Freemium Model
+
+**Free Tier**:
+- 10 notebooks/month
+- Public notebooks only
+- Community card presets
+- Basic shuffle
+- Download as .ipynb
+
+**Pro Tier ($9/month)**:
+- Unlimited notebooks
+- Private notebooks
+- Custom card creation
+- Advanced shuffle (lock multiple cards)
+- Export to Colab, Kaggle, Deepnote
+- Priority support
+
+**Team Tier ($29/month per seat)**:
+- Everything in Pro
+- Shared workspaces
+- Collaborative editing
+- Team analytics
+- Centralized billing
+
+**Enterprise (Custom Pricing)**:
+- Everything in Team
+- SSO/SAML
+- Private model support
+- Custom card presets
+- Audit logs
+- SLA + dedicated support
+- On-premise deployment option
+
+### Alternative Revenue Streams
+
+1. **API Access**: $0.10 per notebook generated programmatically
+2. **Sponsorships**: Model creators pay to feature their models
+3. **Marketplace**: Sell premium card packs or templates
+4. **Compute Credits**: Offer cloud compute for running notebooks
+5. **Training**: Corporate training on AI model adoption
+
+---
+
+## 🔐 Security & Privacy
+
+### Data Handling
+
+**User Data**:
+- Email and auth via Supabase (SOC 2 compliant)
+- No PII stored beyond email
+- Users can delete all notebooks anytime
+
+**Notebook Content**:
+- Public notebooks: stored indefinitely, indexed for search
+- Private notebooks: encrypted at rest, only accessible by user/team
+- No code execution on our servers (notebooks run locally)
+
+**API Keys**:
+- Never stored in generated notebooks
+- Placeholder text: `YOUR_API_KEY_HERE`
+- Warning cells about key security
+
+### Safety & Abuse Prevention
+
+**Generated Content**:
+- Scan for hardcoded secrets before saving
+- Rate limiting: 100 requests/hour per IP (free), 1000/hour (paid)
+- DMCA takedown process for copyright violations
+- Report button for inappropriate content
+
+**Model Safety**:
+- Display model license prominently
+- Warning for models with restrictive licenses
+- No generation for models flagged by HF for safety issues
+
+---
+
+## 📈 Analytics & Telemetry
+
+### What We Track
+
+**Anonymous (No Auth)**:
+- Page views, button clicks
+- Notebook generation attempts
+- Card selections (aggregate)
+- Error rates
+
+**Authenticated**:
+- User journey (signup → first notebook → share)
+- Notebook generation success rate
+- Remix patterns
+- Feature usage
+
+**Opt-In**:
+- Notebook execution telemetry (did cells run successfully?)
+- Error messages from failed cells
+- Used for improving generation quality
+
+### What We Don't Track
+
+- Notebook content (beyond metadata)
+- User's actual code modifications
+- API keys or credentials
+- Personal data beyond email
+
+---
+
+## 🤝 Partnerships & Integrations
+
+### Strategic Partnerships
+
+**Hugging Face**:
+- Goal: "Open in Alacard" button on model pages
+- Value: Increases model adoption for HF, drives traffic for us
+- Status: Reach out post-MVP
+
+**Jupyter/VS Code**:
+- Goal: Extension to generate notebooks from IDE
+- Value: Reduces friction, keeps users in their workflow
+- Status: V2.0 feature
+
+**Google Colab / Kaggle**:
+- Goal: One-click export to their platforms
+- Value: Users can run notebooks with free compute
+- Status: V1.5 feature
+
+**Model Creators**:
+- Goal: Partner with popular model creators to create "official" notebooks
+- Value: Better docs for them, credibility for us
+- Status: Start outreach in Phase 2
+
+### Integration Opportunities
+
+- **Slack/Discord**: Share notebooks directly to channels
+- **GitHub**: Auto-generate notebooks from model repos
+- **Notion/Confluence**: Embed notebooks in docs
+- **LangChain/LlamaIndex**: Generate notebooks for chains/agents
+
+---
+
+## ❓ Open Questions & Risks
+
+### Open Questions
+
+1. **Customization Depth**: How much should users be able to edit before generating?
+2. **Compute**: Should we offer cloud compute for running notebooks, or keep it local-only?
+3. **Quality Control**: How do we ensure generated notebooks are high-quality?
+4. **Model Coverage**: Do we support all 2.1M models, or curate a subset?
+5. **Pricing**: Is $9/month the right price point?
+
+### Risks & Mitigations
+
+**Risk: Generated notebooks don't work**
+- Mitigation: Extensive testing, fallback templates, community feedback loop
+
+**Risk: HF API rate limits**
+- Mitigation: Cache model metadata, use webhooks for updates, paid HF API tier
+
+**Risk: Low adoption (people don't care)**
+- Mitigation: Validate with hackathon, iterate based on feedback, pivot if needed
+
+**Risk: Quality varies wildly across models**
+- Mitigation: Curated model list, community ratings, "verified" badges
+
+**Risk: Legal issues with model licenses**
+- Mitigation: Display licenses prominently, don't generate for restrictive licenses
+
+**Risk: Competitors copy us**
+- Mitigation: Move fast, build community moat, focus on quality
+
+---
+
+## 🎓 Success Stories (Envisioned)
+
+### Story 1: The Pragmatic Engineer
+
+"I'm building a customer support chatbot. I heard about Llama 3.2 but the docs were terrible. I used Alacard, shuffled until I got a chat UI recipe, and had a working prototype in 20 minutes. We ended up using it in production and saved $5K/month vs. OpenAI."
+
+### Story 2: The Model Creator
+
+"I spent months training a medical Q&A model, but nobody was using it. I partnered with Alacard to create official notebooks at beginner, intermediate, and advanced levels. Downloads increased 10x and I got my first enterprise customer."
+
+### Story 3: The Learning Developer
+
+"I wanted to learn how LLMs work but every tutorial assumed I had a PhD. I found an Alacard notebook at the beginner level that explained everything step-by-step. I remixed it 5 times, each time increasing the difficulty. Now I'm building AI features at my job."
+
+### Story 4: The Enterprise Team
+
+"Our team was locked into OpenAI because nobody wanted to spend time evaluating alternatives. With Alacard, we evaluated 10 models in a day. We found 3 open source models that work better for our use cases and cut our AI costs by 60%."
+
+---
+
+## Appendix: Technical Deep Dives
+
+### A. Notebook Generation Algorithm
+
+```python
+def generate_notebook(recipe):
+    # 1. Fetch model data
+    model_data = fetch_huggingface_model(recipe.model_card.hf_id)
+    readme = fetch_readme(model_data.sha)
+    
+    # 2. Extract code examples
+    code_blocks = extract_python_blocks(readme)
+    if not code_blocks:
+        code_blocks = generate_fallback_code(model_data.pipeline_tag)
+    
+    # 3. Customize based on recipe
+    customized_cells = []
+    
+    # Title cell
+    customized_cells.append(create_markdown_cell(
+        f"# {recipe.model_card.name} - {recipe.topic.name} ({recipe.difficulty.level})"
+    ))
+    
+    # Recipe summary cell
+    customized_cells.append(create_recipe_summary_cell(recipe))
+    
+    # Environment setup
+    installs = get_required_packages(recipe.ui_component)
+    customized_cells.append(create_code_cell(
+        f"!pip install {' '.join(installs)}"
+    ))
+    
+    # Hello world (adjusted for difficulty)
+    hello_code = customize_for_difficulty(
+        code_blocks[0],
+        recipe.difficulty.level
+    )
+    customized_cells.append(create_code_cell(hello_code))
+    
+    # Topic-specific examples
+    for block in code_blocks[1:]:
+        topic_code = reframe_for_topic(block, recipe.topic)
+        customized_cells.append(create_code_cell(topic_code))
+    
+    # UI component implementation
+    ui_code = generate_ui_component(
+        recipe.ui_component,
+        model_data,
+        recipe.prompt_cards
+    )
+    customized_cells.append(create_code_cell(ui_code))
+    
+    # Next steps
+    customized_cells.append(create_markdown_cell(
+        f"## Next Steps\n\n"
+        f"- [Remix this notebook]({get_share_url(recipe)})\n"
+        f"- [Try a different difficulty level]\n"
+        f"- [Explore similar models]"
+    ))
+    
+    # 4. Create notebook JSON
+    notebook = {
+        "cells": customized_cells,
+        "metadata": {
+            "kernelspec": {"name": "python3"},
+            "language_info": {"name": "python"}
+        },
+        "nbformat": 4,
+        "nbformat_minor": 5
+    }
+    
+    # 5. Save and return
+    share_id = save_notebook(recipe, notebook)
+    return share_id
+```
+
+### B. Shuffle Algorithm
+
+```python
+def shuffle_recipe(locked_cards=None):
+    """Generate a random but sensible recipe combination"""
+    
+    # Start with locked cards
+    recipe = locked_cards or {}
+    
+    # Select model (weighted by popularity)
+    if 'model_card' not in recipe:
+        recipe['model_card'] = weighted_random_model()
+    
+    # Select compatible prompt pack
+    if 'prompt_cards' not in recipe:
+        compatible_prompts = get_compatible_prompts(
+            recipe['model_card'].pipeline_tag
+        )
+        recipe['prompt_cards'] = random.choice(compatible_prompts)
+    
+    # Select random topic
+    if 'topic' not in recipe:
+        recipe['topic'] = random.choice(TOPIC_CARDS)
+    
+    # Select difficulty (weighted toward beginner)
+    if 'difficulty' not in recipe:
+        recipe['difficulty'] = weighted_choice([
+            (BEGINNER, 0.5),
+            (INTERMEDIATE, 0.3),
+            (ADVANCED, 0.2)
+        ])
+    
+    # Select compatible UI component
+    if 'ui_component' not in recipe:
+        compatible_ui = get_compatible_ui_components(
+            recipe['model_card'].pipeline_tag
+        )
+        recipe['ui_component'] = random.choice(compatible_ui)
+    
+    return recipe
+```
+
+### C. Remix Tracking
+
+```sql
+-- When a notebook is remixed
+INSERT INTO notebooks (recipe, hf_model_id, notebook_content, metadata)
+VALUES (
+  $1,  -- modified recipe
+  $2,  -- model id
+  $3,  -- generated notebook
+  jsonb_build_object(
+    'forked_from', $4,  -- original share_id
+    'generated_by', 'alacard',
+    'generated_at', now()
+  )
+);
+
+-- Increment remix count on original
+UPDATE notebooks
+SET remix_count = remix_count + 1
+WHERE share_id = $4;
+
+-- Track remix chain
+WITH RECURSIVE remix_chain AS (
+  -- Base case: the current notebook
+  SELECT id, share_id, metadata->>'forked_from' as parent_id, 1 as depth
+  FROM notebooks
+  WHERE share_id = $1
+  
+  UNION ALL
+  
+  -- Recursive case: follow the chain
+  SELECT n.id, n.share_id, n.metadata->>'forked_from', rc.depth + 1
+  FROM notebooks n
+  JOIN remix_chain rc ON n.share_id = rc.parent_id
+  WHERE rc.depth < 10  -- Prevent infinite loops
+)
+SELECT * FROM remix_chain;
+```
+
+---
+
+**End of PRD**
+
+*This is a living document. Last updated: October 4, 2025. Version 1.0.*

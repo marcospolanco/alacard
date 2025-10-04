@@ -14,6 +14,18 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
+# Kill any processes using our required ports (except Redis)
+echo -e "${BLUE}🧹 Clearing ports 3000 and 8000...${NC}"
+pkill -f "next dev" 2>/dev/null || true
+pkill -f "uvicorn" 2>/dev/null || true
+pkill -f "celery worker" 2>/dev/null || true
+
+# Force kill processes using specific ports (except Redis)
+lsof -ti:3000 | xargs kill -9 2>/dev/null || true
+lsof -ti:8000 | xargs kill -9 2>/dev/null || true
+
+echo -e "${GREEN}✅ Ports cleared (Redis left running)${NC}"
+
 # Function to check if a service is running
 check_service() {
     if pgrep -f "$1" > /dev/null; then

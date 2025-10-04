@@ -30,7 +30,7 @@ class NotebookGenerator:
             self._setup_cell(),
             self._hello_cell(hf_model_id),
             self._model_info_cell(model_info),
-            self._readme_example_cell(code_examples[0] if code_examples else None, hf_model_id),
+            await self._readme_example_cell(code_examples[0] if code_examples else None, hf_model_id),
             self._generic_example_cell(model_info),
             self._next_steps_cell(model_info)
         ]
@@ -159,7 +159,7 @@ class NotebookGenerator:
             ]
         }
 
-    def _readme_example_cell(self, code_example: Optional[str], model_id: str) -> Dict[str, Any]:
+    async def _readme_example_cell(self, code_example: Optional[str], model_id: str) -> Dict[str, Any]:
         """Create README example cell"""
         if code_example:
             return {
@@ -174,7 +174,7 @@ class NotebookGenerator:
             }
         else:
             # Get model info for generic example
-            model_info = asyncio.run(self.hf_service.get_model_info(model_id))
+            model_info = await self.hf_service.get_model_info(model_id)
             return self._generic_example_cell(model_info)
 
     def _generic_example_cell(self, model_info: Optional[ModelInfo]) -> Dict[str, Any]:
@@ -265,7 +265,7 @@ class NotebookGenerator:
             "source": [
                 "## Next Steps\n\n",
                 "### Resources\n",
-                f"- [Model Card](https://huggingface.co/{model_info.model_id if model_info else 'models'})\n",
+                f"- [Model Card](https://huggingface.co/{model_info.modelId if model_info else 'models'})\n",
                 "- [Hugging Face Documentation](https://huggingface.co/docs)\n",
                 "- [Transformers Documentation](https://huggingface.co/docs/transformers)\n\n",
                 "### Ideas to Try\n",

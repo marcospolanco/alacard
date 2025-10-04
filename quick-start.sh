@@ -7,6 +7,17 @@ set -e
 
 echo "🚀 Alacard Quick Start..."
 
+# Kill any processes using our required ports (except Redis)
+echo "🧹 Clearing ports 3000 and 8000..."
+pkill -f "next dev" 2>/dev/null || true
+pkill -f "uvicorn" 2>/dev/null || true
+pkill -f "celery worker" 2>/dev/null || true
+
+# Force kill processes using specific ports (except Redis)
+lsof -ti:3000 | xargs kill -9 2>/dev/null || true
+lsof -ti:8000 | xargs kill -9 2>/dev/null || true
+echo "✅ Ports cleared (Redis left running)"
+
 # Check if Redis is running
 if ! redis-cli ping > /dev/null 2>&1; then
     echo "📦 Starting Redis..."
