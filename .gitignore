@@ -1,0 +1,7 @@
+# OS
+.DS_Store
+
+# Local notes (ignored by default)
+notes/
+!notes/.gitkeep
+
