@@ -1,69 +1,193 @@
-# Alacard - Technical Strategy (Notebook Generator)
+# Alacard - Technical Strategy (AI Manuals for AI Models)
 
 ## 1. Overview
-This document outlines the technical strategy for building "Alacard," a notebook generation platform that creates downloadable Jupyter notebooks from Hugging Face models. This strategy is derived from the [latest PRD](alacard/alacard-prd_2025.10.04.1555.md) and focuses on delivering a working demo with HF model selection, automated notebook generation, and sharing capabilities.
+This document outlines the technical strategy for building "Alacard," a card-based recipe builder that generates customized, educational Jupyter notebooks for any Hugging Face model. This strategy is derived from the [latest PRD](alacard/alacard-prd_2025.10.04.1420.md) and focuses on delivering a revolutionary platform that makes AI model adoption trivially easy through interactive, runnable code notebooks.
 
 ## 2. Core Architecture & Technical Stack
-The platform is built for a 3-hour demo sprint with a lean, focused architecture.
+The platform is built as a card-based recipe builder with a scalable architecture focused on community-driven notebook generation.
 
 ### Frontend Layer
-- **React/Next.js** - Single-page application with model selection and notebook generation interface
-- **Tailwind CSS** - Responsive UI components with clean design
+- **Next.js 14 (App Router)** - Modern React framework with server components
+- **React Server Components** - Optimized rendering and data fetching
+- **Tailwind CSS** - Responsive UI components with card-based design system
 - **TypeScript** - Type-safe development and better developer experience
+- **Figma Make** - Rapid prototyping for card UI components
 
 ### Backend Layer
-- **Node.js API Routes** - Server-side API endpoints for model fetching and notebook generation
+- **Next.js API Routes** - Server-side API endpoints for recipe building and notebook generation
 - **Hugging Face API Integration** - Model metadata retrieval and README content fetching
-- **Template Engine** - Server-side `.ipynb` generation from README code snippets
+- **Advanced Template Engine** - Custom notebook generation based on recipe cards
+- **Background Processing** - Celery + Redis for long-running generation tasks (Future)
 
 ### Database Layer
-- **Supabase (PostgreSQL)** - Serverless database for storing generated notebooks and share metadata
-- **JSON Storage** - Notebook content stored as JSON for efficient retrieval
-- **Public Access** - No authentication required for demo (anonymous access)
+- **Supabase (PostgreSQL)** - Serverless database for storing recipes, notebooks, and community data
+- **JSON Storage** - Recipe configurations and notebook content stored as JSON
+- **Community Analytics** - Tracking views, downloads, remixes, and trending content
+- **User Management** - Supabase Auth for user accounts and personal notebooks (Post-MVP)
 
 ### External Integrations
-- **Hugging Face Model API** - Fetch model metadata, descriptions, and popular model lists
+- **Hugging Face Model API** - Fetch model metadata, descriptions, and model search
 - **Hugging Face Files API** - Retrieve model README files and extract code examples
 - **Hugging Face Hub API** - Get model card information and usage statistics
+- **OpenAI/Anthropic (Optional)** - AI-powered notebook customization and content enhancement
 
 ## 3. Database Schema Design
 
-### Primary Table: `notebooks`
+### Core Tables
+
+#### `notebooks` - Main notebook storage
 ```sql
 CREATE TABLE IF NOT EXISTS public.notebooks (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   share_id TEXT UNIQUE NOT NULL,
+
+  -- Recipe data
+  recipe JSONB NOT NULL,  -- { model_card, prompt_cards, topic, difficulty, ui_component }
   hf_model_id TEXT NOT NULL,
-  notebook_content JSONB NOT NULL,
-  metadata JSONB,
-  download_count INTEGER DEFAULT 0
+
+  -- Generated content
+  notebook_content JSONB NOT NULL,  -- Full .ipynb JSON
+
+  -- Metadata
+  metadata JSONB,  -- { model_info, source_readme, generated_by, forked_from }
+
+  -- Community metrics
+  view_count INTEGER DEFAULT 0,
+  download_count INTEGER DEFAULT 0,
+  remix_count INTEGER DEFAULT 0,
+
+  -- User association (post-MVP)
+  user_id UUID REFERENCES auth.users(id),
+  is_public BOOLEAN DEFAULT true
 );
 
--- Indexes for performance
+-- Performance indexes
 CREATE INDEX IF NOT EXISTS notebooks_share_idx ON public.notebooks(share_id);
 CREATE INDEX IF NOT EXISTS notebooks_model_idx ON public.notebooks(hf_model_id);
+CREATE INDEX IF NOT EXISTS notebooks_remix_idx ON public.notebooks(remix_count DESC);
+CREATE INDEX IF NOT EXISTS notebooks_user_idx ON public.notebooks(user_id);
 CREATE INDEX IF NOT EXISTS notebooks_created_idx ON public.notebooks(created_at DESC);
 ```
 
+#### `card_presets` - Curated card options
+```sql
+CREATE TABLE IF NOT EXISTS public.card_presets (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  card_type TEXT NOT NULL,  -- 'model', 'prompt', 'topic', 'difficulty', 'ui_component'
+  card_data JSONB NOT NULL,
+  is_featured BOOLEAN DEFAULT false,
+  sort_order INTEGER DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Card type indexes
+CREATE INDEX IF NOT EXISTS card_presets_type_idx ON public.card_presets(card_type);
+CREATE INDEX IF NOT EXISTS card_presets_featured_idx ON public.card_presets(is_featured, sort_order);
+```
+
+#### `collections` - User notebook organization (Post-MVP)
+```sql
+CREATE TABLE IF NOT EXISTS public.collections (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES auth.users(id) NOT NULL,
+  name TEXT NOT NULL,
+  description TEXT,
+  notebook_ids UUID[] DEFAULT array[]::uuid[],
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS collections_user_idx ON public.collections(user_id);
+```
+
 ### Schema Rationale
-- **Single Table Design**: Simplifies architecture for 3-hour sprint
-- **JSON Storage**: Notebook content stored as JSON for flexible structure
-- **Share IDs**: Publicly accessible identifiers for sharing notebooks
-- **Metadata**: Rich context about model source and generation parameters
-- **Analytics**: Download counting for popular model identification
+- **Recipe-Based Storage**: Cards are stored as JSON, enabling infinite combinations
+- **Community Features**: Built-in tracking for views, downloads, and remixes
+- **Scalable Design**: Supports both anonymous and authenticated usage patterns
+- **Curation System**: Card presets allow for featured content and quality control
+- **Future-Ready**: Schema supports advanced features like collections and workspaces
 
 ## 4. API Endpoints Specification
 
-### 4.1 Notebook Generation Endpoints
+### 4.1 Recipe Building Endpoints
+
+#### `GET /api/shuffle`
+Generate a random but sensible recipe combination (removes analysis paralysis).
+
+**Query Parameters:**
+- `locked_cards`: Optional array of card types to keep fixed
+
+**Response:**
+```json
+{
+  "recipe": {
+    "model_card": {
+      "id": "meta-llama/Llama-3.1-8B-Instruct",
+      "name": "Llama-3.1-8B-Instruct",
+      "pipeline_tag": "text-generation"
+    },
+    "prompt_cards": [
+      {"type": "quick_start", "prompts": ["Hello world", "Basic usage"]},
+      {"type": "real_world", "prompts": ["Summarize this text", "Q&A"]}
+    ],
+    "topic": {
+      "id": "sourdough",
+      "name": "Sourdough Bread Making",
+      "examples": ["recipe analysis", "baking instructions"]
+    },
+    "difficulty": {
+      "level": "beginner",
+      "description": "Extensive comments and explanations"
+    },
+    "ui_component": {
+      "type": "chat_interface",
+      "features": ["message history", "streaming"]
+    }
+  }
+}
+```
+
+#### `GET /api/cards/:type`
+Retrieve available cards of a specific type.
+
+**Query Parameters:**
+- `search`: Filter cards by name or description
+- `category`: Filter by category (for model cards)
+- `featured`: Return only featured cards
+- `limit`: Number of results (default 20)
+
+**Response:**
+```json
+{
+  "cards": [
+    {
+      "id": "beginner",
+      "name": "🌱 Beginner",
+      "description": "Lots of comments, step-by-step explanations",
+      "card_type": "difficulty",
+      "is_featured": true
+    }
+  ],
+  "total": 15
+}
+```
+
+### 4.2 Notebook Generation Endpoints
 
 #### `POST /api/notebook/generate`
-Creates a new notebook for a specified Hugging Face model.
+Creates a new notebook based on recipe cards.
 
 **Request Body:**
 ```json
 {
-  "hf_model_id": "meta-llama/Llama-3.1-8B-Instruct"
+  "recipe": {
+    "model_card": {...},
+    "prompt_cards": [...],
+    "topic": {...},
+    "difficulty": {...},
+    "ui_component": {...}
+  }
 }
 ```
 
@@ -72,6 +196,7 @@ Creates a new notebook for a specified Hugging Face model.
 {
   "share_id": "abc12345",
   "notebook_url": "/api/notebook/download/abc12345",
+  "share_url": "/share/abc12345",
   "model_info": {
     "name": "Llama-3.1-8B-Instruct",
     "pipeline_tag": "text-generation",
@@ -82,20 +207,24 @@ Creates a new notebook for a specified Hugging Face model.
 ```
 
 #### `GET /api/notebook/:shareId`
-Retrieves notebook metadata and model information.
+Retrieves notebook metadata and recipe information.
 
 **Response:**
 ```json
 {
   "id": "uuid-here",
   "share_id": "abc12345",
+  "recipe": {...},
   "hf_model_id": "meta-llama/Llama-3.1-8B-Instruct",
   "created_at": "2024-01-15T10:30:00Z",
+  "view_count": 150,
   "download_count": 15,
+  "remix_count": 3,
   "metadata": {
     "model_info": {...},
     "source_readme_sha": "commit-sha-here",
-    "generated_by": "alacard"
+    "generated_by": "alacard",
+    "forked_from": "xyz987"
   }
 }
 ```
@@ -104,13 +233,83 @@ Retrieves notebook metadata and model information.
 Downloads the generated notebook as a `.ipynb` file.
 
 **Headers:**
-- `Content-Type: application/json`
+- `Content-Type: application/x-ipynb+json`
 - `Content-Disposition: attachment; filename="alacard-model-name.ipynb"`
 
-### 4.2 Model Discovery Endpoints
+### 4.3 Community & Remix Endpoints
 
-#### `GET /api/models/popular`
-Returns a curated list of popular Hugging Face models.
+#### `POST /api/notebook/:shareId/remix`
+Create a new notebook based on an existing one with modified recipe.
+
+**Request Body:**
+```json
+{
+  "modified_recipe": {
+    "model_card": {...},
+    "prompt_cards": [...],
+    "topic": {...},
+    "difficulty": {"level": "advanced"},
+    "ui_component": {...}
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "share_id": "def67890",
+  "notebook_url": "/api/notebook/download/def67890",
+  "forked_from": "abc12345"
+}
+```
+
+#### `GET /api/trending`
+Get trending notebooks based on community engagement.
+
+**Query Parameters:**
+- `timeframe`: day, week, month, all
+- `model`: Filter by specific model
+- `topic`: Filter by topic
+- `difficulty`: Filter by difficulty level
+- `limit`: Number of results (default 20)
+
+**Response:**
+```json
+{
+  "notebooks": [
+    {
+      "share_id": "abc12345",
+      "recipe": {...},
+      "hf_model_id": "meta-llama/Llama-3.1-8B-Instruct",
+      "view_count": 1500,
+      "download_count": 250,
+      "remix_count": 45,
+      "created_at": "2024-01-15T10:30:00Z"
+    }
+  ]
+}
+```
+
+#### `POST /api/notebook/:shareId/track`
+Track user interactions for analytics.
+
+**Request Body:**
+```json
+{
+  "event": "view" | "download" | "remix"
+}
+```
+
+### 4.4 Model Discovery Endpoints
+
+#### `GET /api/models/search`
+Search for models across the entire Hugging Face catalog.
+
+**Query Parameters:**
+- `q`: Search query
+- `task`: Filter by task type (text-generation, classification, etc.)
+- `sort`: Sort by downloads, likes, trending, created
+- `limit`: Number of results (default 20)
 
 **Response:**
 ```json
@@ -123,18 +322,12 @@ Returns a curated list of popular Hugging Face models.
       "pipeline_tag": "text-generation",
       "downloads": 1250000,
       "likes": 2340,
-      "tags": ["text-generation", "llama", "conversational"]
+      "tags": ["text-generation", "llama", "conversational"],
+      "license": "llama3.1"
     }
-  ]
+  ],
+  "total": 2100000
 }
-```
-
-#### `GET /api/models/search`
-Search for models by category or keyword.
-
-**Query Parameters:**
-- `category`: text-generation, classification, etc.
-- `limit`: number of results (default 20)
 
 ## 5. Notebook Generation Pipeline
 
@@ -200,47 +393,168 @@ result = translator("Hello, how are you?", src_lang="en", tgt_lang="es")
 ### 6.1 Page Structure
 
 #### Generator Page (`/generator`)
-- **Model Selection Grid**: Popular models with cards showing name, description, downloads
-- **Category Filters**: Browse models by task type (Text Gen, Classification, etc.)
-- **Search Bar**: Direct model search functionality
-- **Generate Button**: One-click notebook generation
-- **Loading States**: Progress indicators during generation
+- **Recipe Builder Interface**: Card-based UI with 5 slots for different card types
+- **Shuffle Button**: "Deal me a hand" feature for random recipes
+- **Card Selection Areas**:
+  - Model Cards: Browse or search 2.1M+ HF models
+  - Prompt Card Packs: Themed sets of 3-5 prompts
+  - Topic Cards: Domain-specific theming (sourdough, healthcare, etc.)
+  - Difficulty Cards: Beginner, Intermediate, Advanced levels
+  - UI Component Cards: Chat interface, API endpoint, Gradio demo, etc.
+- **Recipe Bar**: Visual summary of current card selection
+- **Generate Button**: Prominent CTA for notebook generation
+- **Loading States**: Real-time progress tracking during generation
 
 #### Share Page (`/share/[shareId]`)
-- **Model Information Display**: Model details, usage statistics
-- **Download Button**: Direct notebook download
-- **Generate New Button**: Create notebook with same model
-- **Usage Statistics**: Download count and creation date
+- **Recipe Summary**: Visual display of cards used to generate notebook
+- **Model Information**: Detailed model stats, usage information
+- **Download Button**: Direct notebook download with proper naming
+- **Remix Button**: Pre-fills generator with current recipe for modification
+- **Community Metrics**: Views, downloads, remix count
+- **Fork Chain**: Visual representation of remix history
+
+#### Trending Page (`/trending`)
+- **Notebook Gallery**: Grid of most remixed/shared notebooks
+- **Filter Options**: By model, topic, difficulty, timeframe
+- **Sort Options**: By remixes, downloads, views, recency
+- **Preview Cards**: Recipe summary + key metrics
 
 #### Home Page (`/`)
-- **Landing Page**: Product overview and feature highlights
-- **Quick Start**: Popular models for immediate notebook generation
-- **How It Works**: Step-by-step process explanation
+- **Hero Section**: "AI Manuals for AI Models" value proposition
+- **Quick Shuffle**: One-click recipe generation for immediate discovery
+- **Featured Notebooks**: Curated examples of best recipes
+- **How It Works**: Step-by-step visual explanation of card system
 
 ### 6.2 Component Architecture
 
 ```typescript
-// Core Components
-<ModelCard />          // Individual model selection card
-<ModelGrid />           // Grid layout for model browsing
-<CategoryFilter />      // Model category filtering
-<SearchBar />           // Model search functionality
-<GenerateButton />      // Notebook generation trigger
-<LoadingSpinner />      // Generation progress indicator
-<SharePreview />        // Notebook metadata display
+// Core Card Components
+<ModelCard />          // Individual model selection card with stats
+<RecipeSlot />         // Droppable slot for each card type
+<PromptCardPack />     // Expandable pack of themed prompts
+<TopicCard />          // Domain/topic selection card
+<DifficultyCard />     // Complexity level selector
+<UIComponentCard />    // Interface type selector
+
+// Recipe Building
+<RecipeBar />          // Visual summary of selected cards
+<ShuffleButton />      // Random recipe generation
+<CardGrid />           // Browseable grid for each card type
+<CardSearch />         // Search within card collections
+<GenerateButton />     // Primary CTA with loading states
+
+// Community & Sharing
+<NotebookPreview />    // Recipe + metrics in share page
+<RemixButton />        // Fork and modify existing recipes
+<TrendingCard />       // Notebook in trending gallery
+<ForkChain />          // Visual remix history
+<MetricBadge />        // View/download/remix counts
+
+// Layout & Navigation
+<Header />             // Navigation with shuffle/search
+<Sidebar />            // Filter panels and card categories
+<LoadingStates />      // Progress indicators for generation
+<ErrorBoundary />      // Graceful error handling
 ```
 
 ### 6.3 State Management
 
 ```typescript
+// Recipe State
+interface RecipeState {
+  modelCard: ModelCard | null;
+  promptCards: PromptCardPack | null;
+  topicCard: TopicCard | null;
+  difficultyCard: DifficultyCard | null;
+  uiComponentCard: UIComponentCard | null;
+  lockedCards: string[]; // Card types to keep fixed during shuffle
+}
+
 // Application State
 interface AppState {
-  selectedModel: Model | null;
-  popularModels: Model[];
+  // Recipe Building
+  currentRecipe: RecipeState;
+  availableCards: {
+    models: ModelCard[];
+    prompts: PromptCardPack[];
+    topics: TopicCard[];
+    difficulties: DifficultyCard[];
+    uiComponents: UIComponentCard[];
+  };
+
+  // Generation
   isGenerating: boolean;
-  generatedNotebook: Notebook | null;
+  generationProgress: {
+    stage: string;
+    progress: number;
+    estimatedTime: number;
+  };
+
+  // User Session
+  generatedNotebooks: Notebook[];
+  recentRecipes: RecipeState[];
+
+  // UI State
+  selectedCardType: string | null;
   searchQuery: string;
-  selectedCategory: string;
+  filters: {
+    category?: string;
+    difficulty?: string;
+    featured?: boolean;
+  };
+
+  // Community
+  trendingNotebooks: Notebook[];
+  userMetrics: {
+    notebooksGenerated: number;
+    notebooksShared: number;
+    remixesCreated: number;
+  };
+}
+
+// Card Type Definitions
+interface ModelCard {
+  id: string;
+  name: string;
+  description: string;
+  pipeline_tag: string;
+  downloads: number;
+  likes: number;
+  tags: string[];
+  license: string;
+}
+
+interface PromptCardPack {
+  id: string;
+  name: string;
+  description: string;
+  prompts: string[];
+  category: string;
+  isCustom: boolean;
+}
+
+interface TopicCard {
+  id: string;
+  name: string;
+  description: string;
+  examples: string[];
+  icon: string;
+}
+
+interface DifficultyCard {
+  level: 'beginner' | 'intermediate' | 'advanced';
+  name: string;
+  description: string;
+  commentDensity: number;
+  explanationDepth: number;
+}
+
+interface UIComponentCard {
+  type: 'chat_interface' | 'api_endpoint' | 'gradio_demo' | 'streamlit_app';
+  name: string;
+  description: string;
+  features: string[];
+  complexity: 'simple' | 'moderate' | 'complex';
 }
 ```
 
@@ -349,31 +663,64 @@ const POPULAR_MODELS = [
 
 ## 10. Success Criteria & Validation
 
-### 10.1 Functional Requirements
-✅ **Core Feature Completion:**
-- Model selection interface with popular models
-- Automated notebook generation from README sources
-- Downloadable `.ipynb` files with working code examples
-- Shareable links for generated notebooks
+### 10.1 Functional Requirements (MVP - Hackathon)
+✅ **Core Recipe System:**
+- Card-based recipe builder with 5 card types
+- Shuffle feature for random but sensible combinations
+- Notebook generation from recipe cards
+- Downloadable `.ipynb` files with working code
 
-✅ **Performance Requirements:**
+✅ **Community Features:**
+- Shareable links for generated notebooks
+- Remix functionality for modifying recipes
+- Basic trending page with view/download counts
+- Recipe tracking and provenance
+
+✅ **Model Integration:**
+- Search across 2.1M+ Hugging Face models
+- Popular model curation for quick access
+- Model metadata display (downloads, likes, license)
+- README parsing and code extraction
+
+### 10.2 Performance Requirements
+✅ **Speed & Responsiveness:**
+- Shuffle operation completes within 2 seconds
 - Notebook generation completes within 15 seconds
 - Share page loads within 2 seconds
-- Model browsing and search are responsive
-- Error handling provides graceful fallbacks
+- Card browsing and search are responsive (<500ms)
 
-### 10.2 Technical Validation
+✅ **Scalability:**
+- Handle concurrent notebook generation
+- Efficient card loading and filtering
+- Smooth card animations and interactions
+- Graceful degradation under load
+
+### 10.3 Technical Validation
 ✅ **API Endpoints:**
 - All endpoints respond correctly with proper error codes
-- Notebook generation handles various model types
+- Recipe generation handles various card combinations
 - Database operations complete successfully
 - File downloads work across browsers
 
 ✅ **User Experience:**
-- Intuitive model selection interface
+- Intuitive card-based interface
 - Clear feedback during generation process
 - Successful notebook execution in Jupyter/VS Code
 - Mobile-responsive design
+- "That was easy" feeling for first-time users
+
+### 10.4 Quality Metrics
+✅ **Content Quality:**
+- Generated notebooks run without syntax errors
+- Code examples match model capabilities
+- Explanations are appropriate for difficulty level
+- Topic customization is meaningful and relevant
+
+✅ **Community Engagement:**
+- High remix rate (>10% of shared notebooks)
+- Diverse model usage (not just top 10 models)
+- Quality content rises to top organically
+- User-generated card presets and topics
 
 ## 11. Next-Phase Architecture: FastAPI Backend
 
@@ -692,24 +1039,153 @@ HF_API_TOKEN=your_huggingface_token
 - Performance testing
 - CI/CD pipeline setup
 
-## 12. Post-Sprint Enhancement Roadmap
+## 12. Implementation Roadmap & Success Metrics
 
-### 12.1 Immediate Improvements (Next 1-2 weeks)
-- **Authentication**: Add user accounts for personal notebook libraries
-- **Advanced Search**: Enhanced model filtering and sorting
-- **Notebook Customization**: Allow users to modify generated notebooks
-- **Analytics Dashboard**: Track popular models and usage patterns
+### 12.1 MVP - Hackathon Launch (Week 1)
+**Goal**: Validate core concept with working demo
 
-### 12.2 Feature Expansion (Next 1-2 months)
-- **Model Categories**: Expand to cover more specialized model types
-- **Notebook Library**: Community collection of generated notebooks
-- **Integration Options**: Export to Google Colab, Kaggle
-- **Advanced Templates**: Multi-model notebooks and workflow templates
+**Core Features**:
+- ✅ Card-based recipe builder with 5 card types
+- ✅ Shuffle feature for removing analysis paralysis
+- ✅ Notebook generation from Hugging Face models
+- ✅ Share links and basic remix functionality
+- ✅ 10-15 curated cards per type for initial variety
 
-### 12.3 Scalability Planning (Next 2-3 months)
-- **Multi-Region Deployment**: Global distribution for faster access
-- **Enterprise Features**: Private model support and team collaboration
-- **API Rate Limiting**: Prevent abuse and ensure fair usage
-- **Cost Optimization**: Efficient resource usage and scaling
+**Success Metrics**:
+- 50+ unique users try the shuffle feature
+- 100+ notebooks generated during hackathon
+- 10+ notebooks shared publicly
+- 5+ successful remixes
+- Qualitative feedback: "This is actually useful"
 
-This enhanced architecture addresses the fundamental limitations of serverless functions while providing a robust foundation for scaling the notebook generation platform.
+**Technical Goals**:
+- All API endpoints functional
+- Database schema implemented
+- Basic UI working smoothly
+- Error handling covers edge cases
+
+### 12.2 V1.0 - Community Launch (Weeks 2-4)
+**Goal**: Build initial library and activate community features
+
+**Feature Expansion**:
+- 🔲 User authentication (Supabase Auth)
+- 🔲 User dashboard (my notebooks, my recipes)
+- 🔲 Trending page with filtering and sorting
+- 🔲 Full model search across 2.1M+ HF models
+- 🔲 Expanded card library (50+ options per type)
+- 🔲 Remix tracking and provenance visualization
+- 🔲 Basic analytics and usage tracking
+
+**Community Seeding**:
+- 🔲 Partner with 5-10 model creators for "official" notebooks
+- 🔲 Create 20+ high-quality starter recipes
+- 🔲 "Notebook of the Week" showcase
+- 🔲 Social sharing integration
+
+**Success Metrics**:
+- 500+ notebooks generated
+- 50+ shared notebooks
+- 100+ remixes
+- 1000+ unique visitors
+- 30% week-over-week growth
+
+### 12.3 V1.5 - Power User Features (Month 2)
+**Goal**: Retain users and build habit formation
+
+**Advanced Features**:
+- 🔲 User collections and organization
+- 🔲 Inline notebook editing before download
+- 🔲 Custom card creation (user-defined prompts, topics)
+- 🔲 Search and filter by recipe combinations
+- 🔲 Email notifications for remixes and trending
+- 🔲 Comments and basic social features
+- 🔲 Export to Colab, Kaggle, Deepnote
+
+**Quality Improvements**:
+- 🔲 Advanced error handling and recovery
+- 🔲 Notebook quality validation
+- 🔲 Performance optimization for mobile
+- 🔲 A/B testing for conversion optimization
+
+**Success Metrics**:
+- 5000+ notebooks generated
+- 500+ shared notebooks
+- 1000+ remixes
+- 20% return user rate
+- 2+ minute average session time
+
+### 12.4 V2.0 - Platform Expansion (Month 3)
+**Goal**: Establish market position and prepare for monetization
+
+**Platform Features**:
+- 🔲 Multi-model notebooks and comparisons
+- 🔲 Advanced customization (edit templates)
+- 🔲 API for programmatic notebook generation
+- 🔲 Jupyter/VS Code extension
+- 🔲 Team collaboration features
+- 🔲 Advanced analytics dashboard
+
+**Business Readiness**:
+- 🔲 Freemium tier limits (10 notebooks/month)
+- 🔲 Upgrade paths and pricing page
+- 🔲 Enterprise feature pipeline
+- 🔲 Monitoring and logging infrastructure
+
+**Success Metrics**:
+- 50,000+ notebooks generated
+- 5000+ shared notebooks
+- 10,000+ remixes
+- 100+ paid users (if launched)
+- 50,000+ unique visitors
+
+### 12.5 V3.0+ - Market Leadership (Months 4-6)
+**Goal**: Become the default way people learn and adopt AI models
+
+**Advanced Capabilities**:
+- 🔲 Fine-tuning recipes and dataset integration
+- 🔲 Production deployment templates
+- 🔲 Cost optimization analysis
+- 🔲 Model recommendation engine
+- 🔲 Enterprise SSO and private models
+- 🔲 Global multi-region deployment
+
+**Ecosystem Building**:
+- 🔲 Developer API and integrations
+- 🔲 Partner program for model creators
+- 🔲 Educational content and certifications
+- 🔲 Community marketplace for premium cards
+
+**Success Metrics**:
+- 500,000+ notebooks generated
+- 50,000+ shared notebooks
+- 100,000+ active users
+- 1000+ paid customers
+- $1M+ ARR
+
+### 12.6 Key Success Indicators
+
+**North Star Metric**: Notebooks Generated Per Week
+- Leading indicator of value creation
+- Measures both discovery and utility
+
+**Health Metrics**:
+- Shuffle to Generate conversion rate (>25%)
+- Generate to Share conversion rate (>15%)
+- Share to Remix conversion rate (>20%)
+- User retention (7-day, 30-day, 90-day)
+- Mobile usage percentage (>40%)
+
+**Quality Metrics**:
+- Notebook execution success rate (>95%)
+- User satisfaction CSAT (>4.5/5)
+- Support ticket volume (<2% of users)
+- Model diversity index (usage beyond top 50 models)
+
+**Business Metrics**:
+- Free to paid conversion rate (>5%)
+- Customer acquisition cost (CAC)
+- Lifetime value (LTV)
+- Monthly recurring revenue (MRR)
+- Viral coefficient (k-factor >0.5)
+
+This roadmap provides a clear path from hackathon demo to market-leading platform, with measurable milestones at each stage. The card-based recipe system creates infinite content variety while community features ensure sustainable growth through network effects.
