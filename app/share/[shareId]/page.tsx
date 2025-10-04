@@ -1,84 +1,80 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useParams } from 'next/navigation'
-import { DEFAULT_MODELS } from '@/lib/presets'
-import { Match } from '@/types'
+import { useParams, useRouter } from 'next/navigation'
+import { Notebook } from '@/types'
 
 export default function SharePage() {
   const params = useParams()
+  const router = useRouter()
   const shareId = params.shareId as string
 
-  const [match, setMatch] = useState<Match | null>(null)
+  const [notebook, setNotebook] = useState<Notebook | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     if (shareId) {
-      loadMatch()
+      loadNotebook()
     }
   }, [shareId])
 
-  const loadMatch = async () => {
+  const loadNotebook = async () => {
     try {
       setLoading(true)
-      const response = await fetch(`/api/match/${shareId}`)
+      const response = await fetch(`/api/notebook/${shareId}`)
 
       if (!response.ok) {
         if (response.status === 404) {
-          setError('Comparison not found')
+          setError('Notebook not found')
         } else {
-          setError('Failed to load comparison')
+          setError('Failed to load notebook')
         }
         return
       }
 
       const data = await response.json()
-      setMatch(data)
+      setNotebook(data)
     } catch (err) {
-      setError('Failed to load comparison')
-      console.error('Error loading match:', err)
+      setError('Failed to load notebook')
+      console.error('Error loading notebook:', err)
     } finally {
       setLoading(false)
     }
   }
 
-  const handleRemix = () => {
-    if (match) {
-      window.location.href = `/arena?from=${shareId}`
+  const handleDownload = () => {
+    if (notebook) {
+      window.open(`/api/notebook/download/${shareId}`, '_blank')
     }
   }
 
-  const handleCopyLink = () => {
-    window.navigator.clipboard.writeText(window.location.href)
-    alert('Link copied to clipboard!')
-  }
-
-  const handleDownloadNotebook = () => {
-    if (match) {
-      // Use Model B for notebook generation by default
-      const hfModel = match.model_b.replace('openai:', '').replace('hf:', '')
-      window.open(`/api/notebook?hf_model=${hfModel}&share_id=${shareId}`, '_blank')
+  const handleGenerateNew = () => {
+    if (notebook) {
+      router.push(`/generator?model=${encodeURIComponent(notebook.hf_model_id)}`)
     }
   }
 
-  const getWinnerDisplay = () => {
-    if (!match?.scoring?.winner) return null
+  const copyShareLink = () => {
+    const shareUrl = `${window.location.origin}/share/${shareId}`
+    window.navigator.clipboard.writeText(shareUrl)
+    alert('Share link copied to clipboard!')
+  }
 
-    const winnerMap = {
-      'A': { label: 'Model A', color: 'text-blue-600', bg: 'bg-blue-50' },
-      'B': { label: 'Model B', color: 'text-purple-600', bg: 'bg-purple-50' },
-      'tie': { label: 'Tie', color: 'text-gray-600', bg: 'bg-gray-50' }
+  const formatDownloads = (downloads: number) => {
+    if (downloads >= 1000000) {
+      return `${(downloads / 1000000).toFixed(1)}M`
+    } else if (downloads >= 1000) {
+      return `${(downloads / 1000).toFixed(1)}K`
     }
+    return downloads.toString()
+  }
 
-    const winner = winnerMap[match.scoring.winner]
-    if (!winner) return null
-
-    return (
-      <div className={`${winner.bg} ${winner.color} px-4 py-2 rounded-lg font-medium`}>
-        🏆 {winner.label}
-      </div>
-    )
+  const formatLikes = (likes: number) => {
+    if (likes >= 1000) {
+      return `${(likes / 1000).toFixed(1)}K`
+    }
+    return likes.toString()
   }
 
   if (loading) {
@@ -86,142 +82,196 @@ export default function SharePage() {
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading comparison...</p>
+          <p className="text-gray-600">Loading notebook...</p>
         </div>
       </div>
     )
   }
 
-  if (error || !match) {
+  if (error || !notebook) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
           <div className="text-6xl mb-4">😕</div>
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">Comparison Not Found</h1>
-          <p className="text-gray-600 mb-6">{error || 'This comparison link may be expired or incorrect.'}</p>
-          <a href="/arena" className="px-6 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors">
-            Create New Comparison
-          </a>
+          <h1 className="text-2xl font-bold text-gray-900 mb-2">Notebook Not Found</h1>
+          <p className="text-gray-600 mb-6">{error || 'This notebook link may be expired or incorrect.'}</p>
+          <button
+            onClick={() => router.push('/generator')}
+            className="px-6 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+          >
+            Create New Notebook
+          </button>
         </div>
       </div>
     )
   }
+
+  const modelInfo = notebook.metadata?.model_info
 
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-4xl mx-auto px-4 py-8">
         {/* Header */}
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Model Comparison Results</h1>
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">Generated Notebook</h1>
           <p className="text-gray-600">Share ID: {shareId}</p>
         </div>
 
-        {/* Recipe Summary */}
-        <div className="bg-gradient-to-r from-blue-50 to-purple-50 border border-blue-200 rounded-lg p-6 mb-8">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <span className="text-2xl">{match.meta.recipe?.emoji || '🔄'}</span>
-              <h2 className="font-semibold text-gray-900">{match.meta.recipe?.title || 'Custom Comparison'}</h2>
+        {/* Model Information */}
+        <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
+          <div className="flex items-start justify-between mb-4">
+            <div className="flex-1">
+              <h2 className="text-xl font-semibold text-gray-900 mb-2">
+                {modelInfo?.name || notebook.hf_model_id}
+              </h2>
+              <div className="flex items-center gap-4 text-sm text-gray-600 mb-3">
+                <span className="bg-gray-100 px-2 py-1 rounded">
+                  {modelInfo?.pipeline_tag || 'text-generation'}
+                </span>
+                <span>Created: {new Date(notebook.created_at).toLocaleDateString()}</span>
+                <span>Downloads: {notebook.download_count || 0}</span>
+              </div>
+              {modelInfo?.description && (
+                <p className="text-gray-700 mb-4">{modelInfo.description}</p>
+              )}
             </div>
-            {getWinnerDisplay()}
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-            <div>
-              <h3 className="text-sm font-medium text-gray-600 mb-2">Models Compared</h3>
-              <div className="space-y-1">
-                <div className="text-sm">
-                  <span className="text-blue-600 font-medium">Model A:</span> {match.model_a}
+          {/* Model Stats */}
+          {modelInfo && (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-4 border-t border-gray-200">
+              <div className="text-center">
+                <div className="text-2xl font-bold text-blue-600">
+                  {formatDownloads(modelInfo.downloads)}
                 </div>
-                <div className="text-sm">
-                  <span className="text-purple-600 font-medium">Model B:</span> {match.model_b}
+                <div className="text-sm text-gray-600">Downloads</div>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold text-purple-600">
+                  {formatLikes(modelInfo.likes)}
                 </div>
+                <div className="text-sm text-gray-600">Likes</div>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold text-green-600">
+                  {notebook.download_count}
+                </div>
+                <div className="text-sm text-gray-600">Notebook Downloads</div>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold text-orange-600">
+                  {modelInfo.tags.length}
+                </div>
+                <div className="text-sm text-gray-600">Tags</div>
               </div>
             </div>
+          )}
 
-            <div>
-              <h3 className="text-sm font-medium text-gray-600 mb-2">Test Date</h3>
-              <div className="text-sm text-gray-700">
-                {new Date(match.created_at).toLocaleDateString()} at{' '}
-                {new Date(match.created_at).toLocaleTimeString()}
+          {/* Tags */}
+          {modelInfo?.tags && modelInfo.tags.length > 0 && (
+            <div className="mt-4">
+              <h4 className="text-sm font-medium text-gray-700 mb-2">Tags:</h4>
+              <div className="flex flex-wrap gap-2">
+                {modelInfo.tags.map((tag) => (
+                  <span
+                    key={tag}
+                    className="text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded"
+                  >
+                    {tag}
+                  </span>
+                ))}
               </div>
             </div>
-          </div>
-
-          <div>
-            <h3 className="text-sm font-medium text-gray-600 mb-2">Prompts Used</h3>
-            <div className="space-y-1">
-              {match.prompts.map((prompt, index) => (
-                <div key={index} className="text-sm text-gray-700">
-                  {index + 1}. {prompt}
-                </div>
-              ))}
-            </div>
-          </div>
+          )}
         </div>
 
-        {/* Results */}
-        <div className="space-y-6 mb-8">
-          {match.outputs?.items?.map((result, index) => (
-            <div key={index} className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-              <div className="bg-gray-50 px-4 py-3 border-b border-gray-200">
-                <h3 className="font-medium text-gray-900">Prompt {index + 1}</h3>
-                <p className="text-sm text-gray-600 mt-1">{result.prompt}</p>
+        {/* Notebook Preview */}
+        <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">About This Notebook</h3>
+          <div className="space-y-3 text-sm text-gray-700">
+            <div className="flex items-start gap-3">
+              <div className="w-6 h-6 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
+                <span className="text-blue-600 font-bold text-xs">1</span>
               </div>
-
-              <div className="grid grid-cols-2 divide-x divide-gray-200">
-                {/* Model A Result */}
-                <div className="p-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <h4 className="font-medium text-blue-600">Model A</h4>
-                    <span className="text-xs text-gray-500">{result.a_ms}ms</span>
-                  </div>
-                  <div className="text-sm text-gray-700 whitespace-pre-wrap bg-blue-50 rounded p-3">
-                    {result.a}
-                  </div>
-                </div>
-
-                {/* Model B Result */}
-                <div className="p-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <h4 className="font-medium text-purple-600">Model B</h4>
-                    <span className="text-xs text-gray-500">{result.b_ms}ms</span>
-                  </div>
-                  <div className="text-sm text-gray-700 whitespace-pre-wrap bg-purple-50 rounded p-3">
-                    {result.b}
-                  </div>
-                </div>
+              <div>
+                <strong>Environment Setup:</strong> Installs required packages (transformers, huggingface_hub)
               </div>
             </div>
-          ))}
+            <div className="flex items-start gap-3">
+              <div className="w-6 h-6 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
+                <span className="text-blue-600 font-bold text-xs">2</span>
+              </div>
+              <div>
+                <strong>Hello Cell:</strong> Verifies model access with a minimal test
+              </div>
+            </div>
+            <div className="flex items-start gap-3">
+              <div className="w-6 h-6 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
+                <span className="text-blue-600 font-bold text-xs">3</span>
+              </div>
+              <div>
+                <strong>Real Example:</strong> Code extracted from the model's README
+              </div>
+            </div>
+            <div className="flex items-start gap-3">
+              <div className="w-6 h-6 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
+                <span className="text-blue-600 font-bold text-xs">4</span>
+              </div>
+              <div>
+                <strong>Documentation:</strong> Model information and next steps
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* Actions */}
         <div className="flex flex-col sm:flex-row gap-4 justify-center">
           <button
-            onClick={handleRemix}
-            className="px-6 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors font-medium"
+            onClick={handleDownload}
+            className="flex-1 px-6 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors font-medium flex items-center justify-center gap-2"
           >
-            🔄 Remix This Recipe
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            Download Notebook (.ipynb)
           </button>
+
           <button
-            onClick={handleCopyLink}
-            className="px-6 py-3 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors font-medium"
+            onClick={handleGenerateNew}
+            className="flex-1 px-6 py-3 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors font-medium flex items-center justify-center gap-2"
           >
-            📋 Copy Link
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+            Generate New with Same Model
           </button>
+
           <button
-            onClick={handleDownloadNotebook}
-            className="px-6 py-3 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors font-medium"
+            onClick={copyShareLink}
+            className="flex-1 px-6 py-3 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors font-medium flex items-center justify-center gap-2"
           >
-            📓 Run as Notebook
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+            </svg>
+            Copy Share Link
           </button>
-          <a
-            href="/arena"
-            className="px-6 py-3 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium text-center"
+
+          <button
+            onClick={() => router.push('/generator')}
+            className="flex-1 px-6 py-3 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium"
           >
-            Create New Comparison
-          </a>
+            Create Different Notebook
+          </button>
+        </div>
+
+        {/* Attribution */}
+        <div className="mt-8 text-center text-sm text-gray-500">
+          <p>
+            Generated by Alacard • Model ID: {notebook.hf_model_id}
+          </p>
+          <p className="mt-2">
+            This notebook was automatically generated from the model's README using Alacard's notebook generation pipeline.
+          </p>
         </div>
       </div>
     </div>

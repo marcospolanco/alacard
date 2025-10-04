@@ -1,55 +1,52 @@
-export interface Match {
+export interface Notebook {
   id: string
   created_at: string
   share_id: string
-  model_a: string
-  model_b: string
-  system_prompt?: string
-  prompts: string[]
-  outputs?: {
-    items: Array<{
-      prompt: string
-      a: string
-      b: string
-      a_ms: number
-      b_ms: number
-    }>
+  hf_model_id: string
+  notebook_content: any
+  metadata: {
+    model_info?: ModelInfo
+    source_readme_sha?: string
+    generated_by: string
   }
-  scoring?: {
-    winner: 'A' | 'B' | 'tie'
-    votes?: Record<string, any>
-    rubric?: Record<string, any>
-  }
-  meta: {
-    client_version?: string
-    notes?: string
-    recipe: {
-      models: [string, string]
-      prompts: string[]
-      title?: string
-      emoji?: string
-    }
-  }
+  download_count: number
+}
+
+export interface ModelInfo {
+  id: string
+  modelId: string
+  name: string
+  description?: string
+  pipeline_tag: string
+  tags: string[]
+  downloads: number
+  likes: number
+  createdAt?: string
+  modelId?: string
 }
 
 export interface ModelCard {
   id: string
-  name: string
-  provider: 'openai' | 'hf'
-  description: string
-  emoji: string
   modelId: string
+  name: string
+  description: string
+  pipeline_tag: string
+  downloads: number
+  likes: number
+  tags: string[]
+  category?: string
 }
 
-export interface PromptCard {
-  id: string
-  text: string
-  emoji: string
+export interface NotebookGenerationRequest {
+  hf_model_id: string
 }
 
-export interface Recipe {
-  models: [ModelCard, ModelCard]
-  prompts: PromptCard[]
-  title: string
-  emoji: string
+export interface NotebookGenerationResponse {
+  share_id: string
+  notebook_url: string
+  model_info: ModelInfo
+}
+
+export interface PopularModelsResponse {
+  models: ModelCard[]
 }

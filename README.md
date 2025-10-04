@@ -1,15 +1,15 @@
-# Alacard - AI Model Comparison Platform
+# Alacard - Notebook Generator Platform
 
-A 3-hour sprint implementation of an AI model comparison arena with shareable results and notebook generation.
+A 3-hour sprint implementation of a notebook generation platform that creates downloadable Jupyter notebooks from Hugging Face models with real code examples.
 
 ## Features
 
-- **Model Comparison**: Compare AI models side-by-side with visual card interface
-- **Prompt Cards**: Editable prompt cards for testing different scenarios
-- **Shareable Results**: Generate share links for comparisons
-- **Remix Functionality**: Allow others to remix and modify existing comparisons
-- **Notebook Generation**: Export comparisons as runnable Jupyter notebooks
-- **Real-time Results**: See performance metrics (latency, token counts)
+- **Model Selection**: Browse and select from popular Hugging Face models
+- **Automated Notebook Generation**: Extracts code examples from model READMEs
+- **Downloadable Notebooks**: Get ready-to-run `.ipynb` files
+- **Shareable Results**: Generate share links for generated notebooks
+- **Model Categories**: Filter models by task type (Text Generation, Classification, etc.)
+- **Real Examples**: Uses actual code from model documentation
 
 ## Quick Start
 
@@ -28,8 +28,7 @@ Update the environment variables:
 NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 
-# AI API Keys
-OPENAI_API_KEY=your-openai-api-key
+# Hugging Face API
 HF_API_TOKEN=your-huggingface-token
 ```
 
@@ -39,25 +38,28 @@ HF_API_TOKEN=your-huggingface-token
 2. Run the migration script:
 
 ```sql
--- Run this in your Supabase SQL editor
-create extension if not exists pgcrypto;
+-- Run this in your Supabase SQL Editor
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
-create table if not exists public.matches (
-  id uuid primary key default gen_random_uuid(),
-  created_at timestamptz not null default now(),
-  share_id text unique not null,
-  model_a text not null,
-  model_b text not null,
-  system_prompt text,
-  prompts jsonb not null,
-  outputs jsonb,
-  scoring jsonb,
-  meta jsonb
+CREATE TABLE IF NOT EXISTS public.notebooks (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  share_id TEXT UNIQUE NOT NULL,
+  hf_model_id TEXT NOT NULL,
+  notebook_content JSONB NOT NULL,
+  metadata JSONB,
+  download_count INTEGER DEFAULT 0
 );
 
-create index if not exists matches_share_idx on public.matches(share_id);
+CREATE INDEX IF NOT EXISTS notebooks_share_idx ON public.notebooks(share_id);
+CREATE INDEX IF NOT EXISTS notebooks_model_idx ON public.notebooks(hf_model_id);
+CREATE INDEX IF NOT EXISTS notebooks_created_idx ON public.notebooks(created_at DESC);
 
-alter table public.matches disable row level security;
+ALTER TABLE public.notebooks DISABLE ROW LEVEL SECURITY;
+
+GRANT ALL ON public.notebooks TO authenticated;
+GRANT ALL ON public.notebooks TO anon;
+GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO anon;
 ```
 
 ### 3. Install Dependencies
@@ -77,70 +79,61 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 ## Architecture
 
 ### Frontend (Next.js)
-- **Arena Page**: Model and prompt selection with comparison interface
-- **Share Page**: Read-only results display with remix functionality
+- **Generator Page**: Model selection and notebook generation interface
+- **Share Page**: View and download generated notebooks
 - **Home Page**: Landing page with feature overview
 
 ### Backend (Next.js API Routes)
-- `/api/match` - Create and run model comparisons
-- `/api/match/[shareId]` - Fetch comparison results
-- `/api/match/[shareId]/score` - Save winner selection
-- `/api/notebook` - Generate downloadable Jupyter notebooks
+- `/api/models/popular` - Get popular HF models
+- `/api/models/search` - Search models by category
+- `/api/notebook/generate` - Generate notebooks from models
+- `/api/notebook/[shareId]` - Fetch notebook metadata
+- `/api/notebook/download/[shareId]` - Download notebook files
 
 ### Database (Supabase)
-- Single `matches` table storing all comparison data
-- JSON payloads for prompts, outputs, and metadata
-- Share IDs for public access and remixing
+- **notebooks** table - Store generated notebooks and metadata
+- Public access for demo (no authentication)
+- Share IDs for public notebook access
 
 ## API Endpoints
 
-### POST /api/match
-Create and run a model comparison.
+### Model Discovery
+- `GET /api/models/popular` - Get popular HF models
+- `GET /api/models/search?category=text-generation` - Search models by category
 
-**Request:**
-```json
-{
-  "model_a": "gpt-4o-mini",
-  "model_b": "meta-llama/Llama-3.1-8B-Instruct",
-  "prompts": ["Explain RAG in one paragraph..."]
-}
-```
+### Notebook Generation
+- `POST /api/notebook/generate` - Generate notebook from model
+  ```json
+  {
+    "hf_model_id": "meta-llama/Llama-3.1-8B-Instruct"
+  }
+  ```
 
-**Response:**
-```json
-{
-  "share_id": "abc12345",
-  "outputs": [
-    {
-      "prompt": "Explain RAG...",
-      "a": "RAG is a technique...",
-      "b": "Retrieval-augmented generation...",
-      "a_ms": 1250,
-      "b_ms": 2100
-    }
-  ]
-}
-```
+### Notebook Access
+- `GET /api/notebook/[shareId]` - Get notebook metadata
+- `GET /api/notebook/download/[shareId]` - Download `.ipynb` file
 
-### GET /api/match/[shareId]
-Fetch comparison results for display.
+## Supported Model Categories
 
-### POST /api/match/[shareId]/score
-Save winner selection for a comparison.
+- **Text Generation**: Story writing, content creation models
+- **Chat & Dialogue**: Conversational AI, instruction following
+- **Classification & NER**: Text analysis, entity extraction
+- **Summarization**: Long-form text summarization
+- **Instruction Following**: Complex instruction comprehension
+- **Translation**: Multi-language translation models
+- **Code Generation**: Programming and code completion
 
-### GET /api/notebook?hf_model={model}&share_id={id}
-Generate and download a Jupyter notebook based on comparison.
+## Notebook Template Structure
 
-## Default Models & Prompts
+Generated notebooks follow a consistent 7-cell structure:
 
-### Models
-- **GPT-4o Mini** (OpenAI): Fast and efficient
-- **Llama 3.1 8B** (Hugging Face): Open source powerhouse
-
-### Prompt Templates
-- **Speed vs Smarts** ⚡🧠: Compare performance vs capability
-- **Structured Output Showdown** 🧩: Test JSON generation
-- **Security Lens** 🛡️: Evaluate security awareness
+1. **Title & Attribution** - Model information and links
+2. **Environment Setup** - Install required packages
+3. **Hello Cell** - Basic model verification
+4. **Model Information** - Pipeline details and usage
+5. **README Example** - Real code from model documentation
+6. **Generic Example** - Fallback template
+7. **Next Steps** - Additional resources and links
 
 ## Development
 
@@ -150,14 +143,17 @@ Generate and download a Jupyter notebook based on comparison.
 alacard/
 ├── app/
 │   ├── api/                 # API routes
-│   ├── arena/               # Model comparison interface
-│   ├── share/[shareId]/     # Shared results page
+│   │   ├── models/          # Model discovery endpoints
+│   │   └── notebook/        # Notebook generation endpoints
+│   ├── generator/           # Model selection interface
+│   ├── share/[shareId]/     # Share page for notebooks
 │   └── layout.tsx           # Root layout
 ├── components/              # React components
 │   ├── ModelCard.tsx
-│   ├── PromptCard.tsx
-│   ├── RecipeBar.tsx
-│   └── ComparisonResults.tsx
+│   ├── GenerateButton.tsx
+│   ├── CategoryFilter.tsx
+│   ├── LoadingSpinner.tsx
+│   └── NotebookResult.tsx
 ├── lib/                     # Utilities and presets
 │   ├── supabase.ts
 │   ├── presets.ts
@@ -169,12 +165,15 @@ alacard/
 ### Adding New Models
 
 1. Update `lib/presets.ts` with new model entries
-2. Add corresponding API handling in `/api/match/route.ts`
-3. Update model card styling if needed
+2. Add category if needed
+3. Update notebook generation logic if model requires special handling
 
-### Customizing Prompts
+### Customizing Notebook Templates
 
-Edit the `DEFAULT_PROMPTS` array in `lib/presets.ts` to change default prompt templates.
+Edit the notebook generation logic in `lib/notebook-generator.ts` to customize:
+- Cell structure and content
+- Template variations by model type
+- Code extraction strategies
 
 ## Deployment
 
@@ -194,36 +193,35 @@ Edit the `DEFAULT_PROMPTS` array in `lib/presets.ts` to change default prompt te
 
 ## Demo Script
 
-1. **Open Arena**: Select 2 models and 3 prompts from the card deck
-2. **Run Comparison**: Click "Run Comparison" and watch results populate
-3. **Select Winner**: Choose the better response and save results
-4. **Share Results**: Copy share link and open in new browser
-5. **Remix Recipe**: Click "Remix" to modify the comparison
-6. **Generate Notebook**: Download and run the generated Jupyter notebook
+1. **Open Generator**: Browse popular models and select one
+2. **Generate Notebook**: Click "Generate Notebook" and watch the process
+3. **Download Results**: Get the `.ipynb` file and open in Jupyter
+4. **Share Notebook**: Copy share link and open in fresh browser
+5. **Generate More**: Use "Generate New" button for same model
 
 ## Technology Stack
 
 - **Frontend**: Next.js 14, React, TypeScript, Tailwind CSS
 - **Backend**: Next.js API Routes, Node.js
 - **Database**: Supabase (PostgreSQL)
-- **AI APIs**: OpenAI API, Hugging Face Inference API
+- **External APIs**: Hugging Face Model API, Hugging Face Files API
 - **Styling**: Tailwind CSS with custom components
 
 ## Limitations & Future Work
 
 ### Current Limitations
 - No user authentication (anonymous access only)
-- Limited to text generation models
-- Single comparison per session
-- Basic error handling
+- Limited to predefined popular models
+- Basic notebook template structure
+- No notebook customization options
 
 ### Future Enhancements
-- User accounts and authentication
-- Multi-model comparisons
-- Advanced metrics and analytics
-- Community recipe library
-- Model fine-tuning integration
-- Real-time streaming responses
+- User accounts for personal notebook libraries
+- Enhanced model search and filtering
+- Notebook customization options
+- Integration with Google Colab
+- Background processing for large models
+- Advanced template variations
 
 ## License
 
