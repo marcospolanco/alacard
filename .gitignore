@@ -1,25 +1,34 @@
-# Environment variables
-.env
-.env.*
-!.env.example
-
-# Dependencies
+# dependencies
 /node_modules
-/venv
+/.pnp
+.pnp.js
 
-# Python
-__pycache__/
-*.pyc
+# testing
+/coverage
 
-# OS-specific
-.DS_Store
+# next.js
+/.next/
+/out/
 
-# Build output
+# production
 /build
-/dist
 
-# Logs
-*.log
+# misc
+.DS_Store
+*.pem
 
-# Local files
-more-prd-details.txt
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# local env files
+.env*.local
+.env
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
