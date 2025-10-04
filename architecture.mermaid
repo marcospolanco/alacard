@@ -1,117 +1,81 @@
 ```mermaid
-graph TB
+graph TD
     subgraph "User Layer"
-        UI[React/Next.js App]
+        WebApp[React/Next.js SPA<br/>/arena, /share]
     end
 
-    subgraph "Application Layer"
-        Gateway[Node.js API Gateway<br/>Handles user requests]
-        PyAPI[Python Microservice<br/>FastAPI/Flask]
-        IngestionService[Supabase Functions<br/>Ingestion Service]
+    subgraph "Backend Layer"
+        APIRoutes[Node.js API Routes<br/>/api/match, /api/notebook]
     end
 
-    subgraph "AI Core"
-        Agent[Claude Agent SDK]
-        
-        subgraph "Agent Tools"
-            CreateCell[create_cell]
-            ExecCell[execute_cell]
-            ReadRepo[read_file_from_repo]
-            ListFiles[list_files_in_repo]
-        end
-
-        subgraph "Sandboxed Execution"
-            NotebookExecutionPool[Isolated Python Environments]
-        end
+    subgraph "Data Store"
+        Supabase[Supabase PostgreSQL<br/>Single 'matches' table]
     end
 
-    subgraph "Data & External Services"
-        subgraph "Supabase Platform"
-            Auth[Supabase Auth<br/>GitHub OAuth]
-            
-            subgraph "Database (PostgreSQL)"
-                Users[users table]
-                Workspaces[workspaces table]
-                Repos[repositories table]
-                Models[models table]
-                Cookbooks[cookbooks table]
-                EnvVars[environment_variables table]
-            end
-
-            Storage[Supabase Storage<br/>Repo Files & Notebooks]
-        end
-
-        subgraph "External Services"
-            HF[Hugging Face API]
-            GitHub[GitHub API]
-        end
+    subgraph "External AI Services"
+        OpenAI[OpenAI API<br/>gpt-4o, gpt-4o-mini]
+        HF[Hugging Face APIs<br/>Inference & Model Metadata]
     end
 
-    %% --- Connections --- 
+    %% --- Connections ---
 
-    %% User Flow
-    UI --> Gateway
+    %% Match Creation & Scoring Flow
+    WebApp -- "1. POST /api/match\n(models, prompts)" --> APIRoutes
+    APIRoutes -- "2. Call AI APIs in parallel" --> OpenAI
+    APIRoutes -- "2. Call AI APIs in parallel" --> HF
+    OpenAI -- "3. Return model output" --> APIRoutes
+    HF -- "3. Return model output" --> APIRoutes
+    APIRoutes -- "4. Store results & recipe" --> Supabase
+    Supabase -- "5. Return share_id" --> APIRoutes
+    APIRoutes -- "6. Return outputs & share_id" --> WebApp
+    WebApp -- "7. POST /api/match/:id/score\n(Store winner)" --> APIRoutes
+    APIRoutes -- "8. Update match record" --> Supabase
 
-    %% Gateway to Services
-    Gateway -- "Verifies user" --> Auth
-    Gateway -- "Manages data" --> Users
-    Gateway -- "Manages data" --> Workspaces
-    Gateway -- "Manages data" --> Cookbooks
-    Gateway -- "Triggers ingestion" --> IngestionService
-    Gateway -- "Delegates generation" --> PyAPI
 
-    %% Ingestion Flow
-    IngestionService -- "Fetches repo" --> GitHub
-    IngestionService -- "Fetches metadata" --> HF
-    IngestionService -- "Writes repo files" --> Storage
-    IngestionService -- "Writes metadata" --> Repos
-    IngestionService -- "Writes metadata" --> Models
+    %% Share & Remix Flow
+    WebApp -- "GET /share/[share_id]" --> APIRoutes
+    APIRoutes -- "Fetch match by share_id" --> Supabase
+    Supabase -- "Return match data" --> APIRoutes
+    APIRoutes -- "Return full recipe & results" --> WebApp
 
-    %% AI Generation Flow
-    PyAPI --> Agent
-    Agent -- "Uses" --> CreateCell
-    Agent -- "Uses" --> ExecCell
-    Agent -- "Uses" --> ReadRepo
-    Agent -- "Uses" --> ListFiles
-    
-    ExecCell -- "Executes code in" --> NotebookExecutionPool
-    ReadRepo -- "Reads from" --> Storage
-    ListFiles -- "Reads from" --> Storage
+    %% Notebook Generation Flow
+    WebApp -- "GET /api/notebook?hf_model=..." --> APIRoutes
+    APIRoutes -- "Fetch README & metadata" --> HF
+    HF -- "Return model info" --> APIRoutes
+    APIRoutes -- "Generate .ipynb from template" --> WebApp
+
 
     %% Style Definitions
     classDef userLayer fill:#e1f5fe,stroke:#222
     classDef appLayer fill:#f3e5f5,stroke:#222
-    classDef aiLayer fill:#e8f5e9,stroke:#222
     classDef dataLayer fill:#fffde7,stroke:#222
+    classDef externalLayer fill:#e8f5e9,stroke:#222
 
-    class UI userLayer
-    class Gateway,PyAPI,IngestionService appLayer
-    class Agent,CreateCell,ExecCell,ReadRepo,ListFiles,NotebookExecutionPool aiLayer
-    class Auth,Users,Workspaces,Repos,Models,Cookbooks,EnvVars,Storage,HF,GitHub dataLayer
+    class WebApp userLayer
+    class APIRoutes appLayer
+    class Supabase dataLayer
+    class OpenAI,HF externalLayer
 ```
 
 ### Architecture Components Explained
 
 **User Layer (React/Next.js)**
-- User interface for workspace management, recipe building, and notebook previews.
+- A single-page application containing the Model Comparison Arena and the public Share pages.
 
-**Application Layer**
-- **API Gateway (Node.js)**: The single entry point for all client requests. It handles authentication, orchestrates calls to other services, and manages user-facing data.
-- **Python Microservice**: A dedicated service that hosts the Claude agent and exposes an endpoint for notebook generation.
-- **Ingestion Service (Supabase Functions)**: A serverless function responsible for cloning repositories from GitHub, fetching metadata from Hugging Face, and storing the results in the Supabase database and storage.
+**Backend Layer (Node.js API Routes)**
+- Server-side logic co-located with the frontend.
+- Handles all business logic, including calling external AI services, querying the database, and generating notebooks from templates.
 
-**AI Core**
-- **Claude Agent SDK**: The reasoning engine that drives the notebook creation process.
-- **Agent Tools**: A suite of functions the agent can call to interact with its environment (e.g., create a notebook cell, execute code).
-- **Sandboxed Execution**: Isolated environments where the agent can safely execute code to test and validate the notebook.
+**Data Store (Supabase)**
+- A single PostgreSQL table (`matches`) used to store all data related to a comparison, including the inputs (recipe), outputs, and final score. This simplifies the data model for the sprint.
 
-**Data & External Services**
-- **Supabase Platform**: Provides the core backend infrastructure, including authentication, the PostgreSQL database, and file storage.
-- **External Services**: Third-party APIs that provide essential data, such as model metadata from Hugging Face and repository access from GitHub.
+**External AI Services**
+- **OpenAI API**: Used to get responses from proprietary models like `gpt-4o-mini`.
+- **Hugging Face APIs**: Used for two purposes: running open-source models via the Inference API and fetching model metadata/READMEs via the Model API for notebook generation.
 
 ### Data Flow
-1. The user interacts with the **UI**, sending requests to the **API Gateway**.
-2. For data operations (e.g., listing cookbooks), the Gateway queries the **Supabase Database**.
-3. To start a new cookbook, the Gateway calls the **Python Microservice**.
-4. The **Claude Agent** is invoked, using its **Tools** to read repository data from **Storage** and iteratively build the notebook by running code in the **Sandboxed Execution** environments.
-5. The final, validated notebook is saved back to the **Database** and **Storage** for the user to access.
+1.  The user selects models and prompts in the **WebApp** and sends them to the **API Routes**.
+2.  The backend calls the **OpenAI** and **Hugging Face** APIs in parallel to get model outputs.
+3.  The results are stored in the **Supabase** `matches` table, and a unique `share_id` is returned.
+4.  The user can share a link, which allows others to view the results by fetching the data from Supabase.
+5.  For notebook generation, the backend fetches metadata from the **Hugging Face** Model API and uses a template to create and return a downloadable `.ipynb` file.

@@ -1,105 +1,398 @@
-# AI Model Cookbook Generator - Technical Strategy
+# Alacard - Technical Strategy (Notebook Generator)
 
 ## 1. Overview
-This document outlines the technical strategy for building the "AI Model Cookbook Generator," a platform that ingests GitHub repositories for Hugging Face models and generates customized Jupyter notebook "cookbooks." This strategy is derived from the [PRD](./alacard-prd.md) and details the architecture, data models, and implementation phases required to bring the product to life.
+This document outlines the technical strategy for building "Alacard," a notebook generation platform that creates downloadable Jupyter notebooks from Hugging Face models. This strategy is derived from the [latest PRD](./alacard-prd_2025.10.04.1420.md) and focuses on delivering a working demo with HF model selection, automated notebook generation, and sharing capabilities.
 
 ## 2. Core Architecture & Technical Stack
-The platform will be built on a modern web stack designed for scalability, security, and rapid development.
+The platform is built for a 3-hour demo sprint with a lean, focused architecture.
 
-- **Frontend**: **React/Next.js** - For a fast, server-rendered UI with excellent developer experience.
-- **Backend**: A hybrid approach featuring:
-    - **Node.js (Fastify/Express)**: For the primary public-facing API (handling user requests, workspace management, etc.).
-    - **Python (FastAPI/Flask)**: A dedicated microservice for the AI generation pipeline, built specifically to leverage the **Claude Agent SDK for Python**.
-- **Database**: **Supabase (PostgreSQL)** - Provides a robust database, authentication, file storage, and serverless functions, with Row Level Security (RLS) as a core security feature.
-- **Authentication**: **Supabase Auth** - Manages user sign-up, login, and session management. It will also handle OAuth for GitHub.
-- **File Storage**: **Supabase Storage** - For storing cloned repository files and generated notebooks securely, segregated by workspace and user.
-- **AI & External Integrations**:
-    - **Anthropic Claude Agent SDK**: The core engine for iteratively generating and testing the Jupyter notebooks.
-    - **Hugging Face API**: For fetching model metadata and details.
-    - **GitHub API**: For repository ingestion, requiring user authentication via OAuth.
+### Frontend Layer
+- **React/Next.js** - Single-page application with model selection and notebook generation interface
+- **Tailwind CSS** - Responsive UI components with clean design
+- **TypeScript** - Type-safe development and better developer experience
 
-## 3. Detailed Data Model (Supabase)
-The database schema is designed to be secure and scalable, with RLS enforced on all tables to ensure data isolation.
+### Backend Layer
+- **Node.js API Routes** - Server-side API endpoints for model fetching and notebook generation
+- **Hugging Face API Integration** - Model metadata retrieval and README content fetching
+- **Template Engine** - Server-side `.ipynb` generation from README code snippets
 
-| Table | Columns | Description |
-|---|---|---|
-| **users** | `id` (uuid), `email`, `auth_provider_token` (encrypted) | Stores user identity. GitHub OAuth tokens are encrypted at rest. |
-| **workspaces** | `id` (uuid), `name`, `owner_id` (fk: users.id) | The primary organizational unit for a user's work. |
-| **workspace_members** | `workspace_id` (fk), `user_id` (fk), `role` | **(Phase 3)** Join table to enable multi-user collaboration in shared workspaces. |
-| **environment_variables**| `id` (uuid), `workspace_id` (fk), `key_name`, `encrypted_value` | Securely stores user API keys and other secrets, encrypted at rest. |
-| **repositories** | `id` (uuid), `workspace_id` (fk), `github_url`, `hf_model_id` | Tracks ingested repositories linked to a workspace. |
-| **models** | `id` (uuid), `hf_model_id`, `metadata` (jsonb), `cached_at` | Caches metadata from the Hugging Face API to reduce latency and API hits. |
-| **cookbooks** | `id` (uuid), `repository_id` (fk), `prompt`, `notebook_content` (jsonb), `template` (text), `topic` (text), `complexity` (text), `is_public` (bool), `forked_from_id` (fk) | Stores generated notebooks, their recipe inputs, and community feature flags. |
-| **usage_tracking** | `id` (uuid), `user_id` (fk), `action_type`, `metadata` (jsonb) | Tracks key user actions for analytics and future billing. |
+### Database Layer
+- **Supabase (PostgreSQL)** - Serverless database for storing generated notebooks and share metadata
+- **JSON Storage** - Notebook content stored as JSON for efficient retrieval
+- **Public Access** - No authentication required for demo (anonymous access)
 
-## 4. Claude Agent-Based Generation Pipeline
-The notebook generation process is an iterative, three-step process orchestrated by the Python backend service using the Claude Agent SDK.
+### External Integrations
+- **Hugging Face Model API** - Fetch model metadata, descriptions, and popular model lists
+- **Hugging Face Files API** - Retrieve model README files and extract code examples
+- **Hugging Face Hub API** - Get model card information and usage statistics
 
-### Step 1: Ingestion & Context Gathering
-The system first collects all necessary context about the model. This involves:
-- Cloning the specified GitHub repository.
-- Parsing the repository to understand its structure, find example scripts, and identify dependencies (`requirements.txt`, etc.).
-- Fetching comprehensive metadata for the linked Hugging Face model ID.
+## 3. Database Schema Design
 
-### Step 2: System Prompt Generation
-A sophisticated "system prompt" is dynamically constructed to guide the Claude agent, based on a master template (`starting_generation_prompt.txt`). This is a critical step that transforms the simple user request into a detailed set of instructions for the AI. The prompt is built around a core philosophy: **generate runnable, production-quality code based on real examples, with no placeholders.**
+### Primary Table: `notebooks`
+```sql
+CREATE TABLE IF NOT EXISTS public.notebooks (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  share_id TEXT UNIQUE NOT NULL,
+  hf_model_id TEXT NOT NULL,
+  notebook_content JSONB NOT NULL,
+  metadata JSONB,
+  download_count INTEGER DEFAULT 0
+);
 
-The dynamically generated prompt will include:
-- **Task Definition**: Instructs the agent it is an expert Python educator.
-- **Available Research Tools**: A description of tools the agent can use to gather context before generating code, such as:
-    - `hf_get_file`: To get example code from the model's Hugging Face repository.
-    - `web_fetch`: To fetch documentation from URLs.
-    - `github_get_file`: To get code examples from related GitHub repositories.
-- **Context**: The full context gathered in Step 1 (repo structure, HF metadata, code examples), along with the user's chosen **recipe inputs** (`template`, `topic`, `complexity`).
-- **Output Format**: A strict JSON schema that the agent's response must follow, detailing the notebook's title, cells (with type, content, and metadata), and sources used.
-- **Critical Rules**: A set of non-negotiable rules, including "Use MCP tools to get REAL code," "No placeholders EVER," and "Include attribution."
+-- Indexes for performance
+CREATE INDEX IF NOT EXISTS notebooks_share_idx ON public.notebooks(share_id);
+CREATE INDEX IF NOT EXISTS notebooks_model_idx ON public.notebooks(hf_model_id);
+CREATE INDEX IF NOT EXISTS notebooks_created_idx ON public.notebooks(created_at DESC);
+```
 
-### Step 3: Two-Phase Generation & Testing
-The generation process occurs in two phases: Research & Content Generation, followed by Execution & Validation.
+### Schema Rationale
+- **Single Table Design**: Simplifies architecture for 3-hour sprint
+- **JSON Storage**: Notebook content stored as JSON for flexible structure
+- **Share IDs**: Publicly accessible identifiers for sharing notebooks
+- **Metadata**: Rich context about model source and generation parameters
+- **Analytics**: Download counting for popular model identification
 
-#### Phase 3a: Research & Content Generation
-The Claude agent is first invoked with the system prompt from Step 2. The agent's goal in this phase is not to build the notebook directly, but to perform research using the provided tools (`hf_get_file`, etc.) and then generate a **JSON object** that represents the complete, ideal notebook. This JSON contains all the markdown and code cells planned out, based on the research it conducted.
+## 4. API Endpoints Specification
 
-#### Phase 3b: Iterative Execution & Validation
-The Python service receives the JSON object from the agent. It then enters an iterative loop to build and validate the notebook in a virtual environment using a separate suite of tools:
+### 4.1 Notebook Generation Endpoints
 
-**Execution Tools:**
-- `create_cell(code: str, type: 'code' | 'markdown')`: Adds a new cell to the notebook from the agent's JSON plan.
-- `execute_cell(cell_id: int) -> dict`: Executes the code in a specific cell and returns the result (`stdout`, `stderr`, `has_error`).
-- `read_file_from_repo(path: str) -> str`: Allows the agent to read files from the ingested repository for context during debugging.
-- `list_files_in_repo() -> list[str]`: Lets the agent see the file structure of the repository.
+#### `POST /api/notebook/generate`
+Creates a new notebook for a specified Hugging Face model.
 
-**Iterative Loop:**
-1. The service iterates through the `cells` array in the agent's JSON output.
-2. For each cell, it calls `create_cell`.
-3. If the cell is a code cell, it calls `execute_cell`.
-4. If `execute_cell` returns an error, the service can re-invoke the agent with the error context, asking it to debug the problem. The agent might respond with a corrected code snippet or a new JSON plan.
-5. This "create -> test -> reflect -> correct" loop continues until all cells from the plan have been executed successfully.
-6. The final, validated notebook content is saved to the `cookbooks` table.
+**Request Body:**
+```json
+{
+  "hf_model_id": "meta-llama/Llama-3.1-8B-Instruct"
+}
+```
 
-## 5. Phased Implementation Plan (Milestones)
+**Response:**
+```json
+{
+  "share_id": "abc12345",
+  "notebook_url": "/api/notebook/download/abc12345",
+  "model_info": {
+    "name": "Llama-3.1-8B-Instruct",
+    "pipeline_tag": "text-generation",
+    "downloads": 1250000,
+    "likes": 2340
+  }
+}
+```
 
-### Phase 1: Foundation & Ingestion
-*   **Goal**: Establish core infrastructure and the ability to ingest public repositories.
-*   **Features**:
-    *   User authentication (email/password, GitHub OAuth).
-    *   Workspace creation (single-user).
-    *   Supabase schema setup.
-    *   Backend service to ingest public GitHub repos and sync metadata from Hugging Face.
+#### `GET /api/notebook/:shareId`
+Retrieves notebook metadata and model information.
 
-### Phase 2: Generation MVP
-*   **Goal**: Deliver the core value proposition: generating a useful notebook via the Claude agent.
-*   **Features**:
-    *   Set up the Python generation service.
-    *   Implement the **Claude Agent SDK** with a basic set of tools (`create_cell`, `execute_cell`).
-    *   Build the System Prompt Generation logic, incorporating the new recipe inputs.
-    *   Implement secure environment variable management.
-    *   Build the UI for the "Recipe Builder" and notebook preview.
+**Response:**
+```json
+{
+  "id": "uuid-here",
+  "share_id": "abc12345",
+  "hf_model_id": "meta-llama/Llama-3.1-8B-Instruct",
+  "created_at": "2024-01-15T10:30:00Z",
+  "download_count": 15,
+  "metadata": {
+    "model_info": {...},
+    "source_readme_sha": "commit-sha-here",
+    "generated_by": "alacard"
+  }
+}
+```
 
-### Phase 3: Expansion & Collaboration
-*   **Goal**: Enhance the generation process and introduce community features.
-*   **Features**:
-    *   Implement multi-user collaboration in shared workspaces.
-    *   Implement cookbook sharing (`is_public`) and forking (`forked_from_id`).
-    *   Expand the agent's toolset (e.g., file writing, more complex environment inspection).
-    *   Introduce more sophisticated notebook templates.
+#### `GET /api/notebook/download/:shareId`
+Downloads the generated notebook as a `.ipynb` file.
+
+**Headers:**
+- `Content-Type: application/json`
+- `Content-Disposition: attachment; filename="alacard-model-name.ipynb"`
+
+### 4.2 Model Discovery Endpoints
+
+#### `GET /api/models/popular`
+Returns a curated list of popular Hugging Face models.
+
+**Response:**
+```json
+{
+  "models": [
+    {
+      "id": "meta-llama/Llama-3.1-8B-Instruct",
+      "name": "Llama-3.1-8B-Instruct",
+      "description": "Meta's Llama 3.1 model with 8B parameters",
+      "pipeline_tag": "text-generation",
+      "downloads": 1250000,
+      "likes": 2340,
+      "tags": ["text-generation", "llama", "conversational"]
+    }
+  ]
+}
+```
+
+#### `GET /api/models/search`
+Search for models by category or keyword.
+
+**Query Parameters:**
+- `category`: text-generation, classification, etc.
+- `limit`: number of results (default 20)
+
+## 5. Notebook Generation Pipeline
+
+### 5.1 Data Retrieval Process
+
+1. **Model Metadata Fetch**
+   - GET `https://huggingface.co/api/models/{hf_model_id}`
+   - Extract `pipeline_tag`, `tags`, `modelId`, `sha`
+   - Get download counts, likes, and model information
+
+2. **README Content Retrieval**
+   - GET `https://huggingface.co/{hf_model_id}/raw/{sha}/README.md`
+   - Parse markdown content for code blocks
+   - Extract Python code examples and usage patterns
+
+3. **Code Snippet Extraction Strategy**
+   - **Priority 1**: First Python fenced block from README
+   - **Priority 2**: First code block with any language
+   - **Priority 3**: Generic template based on `pipeline_tag`
+   - **Fallback**: Basic `transformers` pipeline example
+
+### 5.2 Notebook Template Structure
+
+Generated notebooks follow a consistent 7-cell structure:
+
+```
+Cell 1: Markdown - Title & Attribution
+Cell 2: Code - Environment Setup (transformers, huggingface_hub)
+Cell 3: Code - Hello Cell (model verification)
+Cell 4: Markdown - Model Information
+Cell 5: Code - Extracted README Example
+Cell 6: Code - Generic Usage Example
+Cell 7: Markdown - Next Steps & Resources
+```
+
+### 5.3 Template Customization by Model Type
+
+**Text Generation Models:**
+```python
+from transformers import AutoTokenizer, AutoModelForCausalLM
+tokenizer = AutoTokenizer.from_pretrained(model_id)
+model = AutoModelForCausalLM.from_pretrained(model_id)
+inputs = tokenizer("Your prompt here", return_tensors="pt")
+outputs = model.generate(**inputs, max_length=100)
+```
+
+**Classification Models:**
+```python
+from transformers import pipeline
+classifier = pipeline("text-classification", model=model_id)
+result = classifier("This is a sample text for classification.")
+```
+
+**Translation Models:**
+```python
+from transformers import pipeline
+translator = pipeline("translation", model=model_id)
+result = translator("Hello, how are you?", src_lang="en", tgt_lang="es")
+```
+
+## 6. Frontend Architecture
+
+### 6.1 Page Structure
+
+#### Generator Page (`/generator`)
+- **Model Selection Grid**: Popular models with cards showing name, description, downloads
+- **Category Filters**: Browse models by task type (Text Gen, Classification, etc.)
+- **Search Bar**: Direct model search functionality
+- **Generate Button**: One-click notebook generation
+- **Loading States**: Progress indicators during generation
+
+#### Share Page (`/share/[shareId]`)
+- **Model Information Display**: Model details, usage statistics
+- **Download Button**: Direct notebook download
+- **Generate New Button**: Create notebook with same model
+- **Usage Statistics**: Download count and creation date
+
+#### Home Page (`/`)
+- **Landing Page**: Product overview and feature highlights
+- **Quick Start**: Popular models for immediate notebook generation
+- **How It Works**: Step-by-step process explanation
+
+### 6.2 Component Architecture
+
+```typescript
+// Core Components
+<ModelCard />          // Individual model selection card
+<ModelGrid />           // Grid layout for model browsing
+<CategoryFilter />      // Model category filtering
+<SearchBar />           // Model search functionality
+<GenerateButton />      // Notebook generation trigger
+<LoadingSpinner />      // Generation progress indicator
+<SharePreview />        // Notebook metadata display
+```
+
+### 6.3 State Management
+
+```typescript
+// Application State
+interface AppState {
+  selectedModel: Model | null;
+  popularModels: Model[];
+  isGenerating: boolean;
+  generatedNotebook: Notebook | null;
+  searchQuery: string;
+  selectedCategory: string;
+}
+```
+
+## 7. Error Handling & Fallbacks
+
+### 7.1 API Failure Scenarios
+
+**Hugging Face API Rate Limited:**
+- Serve pre-generated popular notebooks
+- Display "API temporarily unavailable" banner
+- Queue requests for retry when available
+
+**README Parsing Failed:**
+- Use generic template based on model pipeline tag
+- Include model metadata in notebook header
+- Add note about source extraction failure
+
+**Supabase Write Failed:**
+- Generate notebook client-side for immediate download
+- Store in browser localStorage as backup
+- Display "Share feature temporarily unavailable" message
+
+### 7.2 Fallback Notebook Templates
+
+Pre-built templates for common model types:
+- **Text Generation**: Basic generation pipeline
+- **Classification**: Zero-shot classification example
+- **Translation**: Language translation pipeline
+- **Summarization**: Document summarization example
+
+## 8. Implementation Timeline (3-Hour Sprint)
+
+### Phase 1: Infrastructure (0:00–0:30)
+- Set up Supabase database with notebooks table
+- Configure environment variables (Supabase, HF API)
+- Create Next.js project structure
+- Set up basic routing (`/generator`, `/share/[shareId]`)
+
+### Phase 2: Backend API (0:30–1:30)
+- Implement `GET /api/models/popular` endpoint
+- Create `POST /api/notebook/generate` endpoint
+- Build notebook template generation logic
+- Implement README parsing and code extraction
+- Add error handling and fallbacks
+
+### Phase 3: Frontend Interface (1:30–2:15)
+- Create model selection grid with popular models
+- Implement notebook generation UI
+- Build loading states and progress indicators
+- Add search and category filtering
+
+### Phase 4: Share & Download Flow (2:15–2:45)
+- Implement share page with model information
+- Create download functionality for `.ipynb` files
+- Add "Generate New" button for same model
+- Implement sharing and analytics
+
+### Phase 5: Polish & Testing (2:45–3:00)
+- Add responsive design and UI polish
+- Test error scenarios and fallbacks
+- Prepare demo flow and talking points
+- Generate sample notebooks for testing
+
+## 9. Environment Configuration
+
+### 9.1 Required Environment Variables
+
+```bash
+# Supabase Configuration
+NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+
+# Hugging Face API
+HF_API_TOKEN=your-huggingface-token
+
+# Application Configuration
+NODE_ENV=development
+PORT=3000
+```
+
+### 9.2 Popular Models Configuration
+
+```typescript
+// Popular models for quick access
+const POPULAR_MODELS = [
+  {
+    id: "meta-llama/Llama-3.1-8B-Instruct",
+    name: "Llama-3.1-8B-Instruct",
+    category: "text-generation",
+    description: "Meta's advanced conversational AI model"
+  },
+  {
+    id: "microsoft/DialoGPT-medium",
+    name: "DialoGPT Medium",
+    category: "conversational",
+    description: "Microsoft's conversational AI model"
+  },
+  {
+    id: "distilbert-base-uncased",
+    name: "DistilBERT Base",
+    category: "classification",
+    description: "Lightweight BERT model for text classification"
+  }
+];
+```
+
+## 10. Success Criteria & Validation
+
+### 10.1 Functional Requirements
+✅ **Core Feature Completion:**
+- Model selection interface with popular models
+- Automated notebook generation from README sources
+- Downloadable `.ipynb` files with working code examples
+- Shareable links for generated notebooks
+
+✅ **Performance Requirements:**
+- Notebook generation completes within 15 seconds
+- Share page loads within 2 seconds
+- Model browsing and search are responsive
+- Error handling provides graceful fallbacks
+
+### 10.2 Technical Validation
+✅ **API Endpoints:**
+- All endpoints respond correctly with proper error codes
+- Notebook generation handles various model types
+- Database operations complete successfully
+- File downloads work across browsers
+
+✅ **User Experience:**
+- Intuitive model selection interface
+- Clear feedback during generation process
+- Successful notebook execution in Jupyter/VS Code
+- Mobile-responsive design
+
+## 11. Post-Sprint Enhancement Roadmap
+
+### 11.1 Immediate Improvements (Next 1-2 days)
+- **Authentication**: Add user accounts for personal notebook libraries
+- **Advanced Search**: Enhanced model filtering and sorting
+- **Notebook Customization**: Allow users to modify generated notebooks
+- **Analytics Dashboard**: Track popular models and usage patterns
+
+### 11.2 Feature Expansion (Next 1-2 weeks)
+- **Model Categories**: Expand to cover more specialized model types
+- **Notebook Library**: Community collection of generated notebooks
+- **Integration Options**: Export to Google Colab, Kaggle
+- **Advanced Templates**: Multi-model notebooks and workflow templates
+
+### 11.3 Scalability Planning (Next 1-2 months)
+- **Background Processing**: Queue-based notebook generation
+- **Caching Layer**: Improve performance for popular models
+- **Multi-Region Deployment**: Global distribution for faster access
+- **Enterprise Features**: Private model support and team collaboration
+
+This technical strategy provides a clear roadmap for implementing a focused notebook generation platform that delivers immediate value while maintaining scalability for future enhancements.

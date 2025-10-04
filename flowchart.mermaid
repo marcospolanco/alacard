@@ -1,0 +1,47 @@
+graph LR
+    subgraph "Flow 1: Model Comparison & Scoring"
+        A1[User selects Models & Prompts in UI] --> A2(Create 'Recipe' JSON object);
+        A2 --> A3[Request: POST /api/match];
+        A3 --> A4(Backend receives Recipe);
+        A4 --> A5[Call OpenAI & HF Inference APIs in parallel];
+        A5 --> A6[Receive Model Outputs - text, latency];
+        A4 & A6 --> A7[Aggregate Recipe & Outputs into single JSON];
+        A7 --> A8["Write to 'matches' table in Supabase"];
+        A8 --> A9(DB generates unique 'share_id');
+        A6 & A9 --> A10[Response: Return Outputs & share_id to UI];
+        A10 --> A11[UI displays side-by-side results];
+        A11 --> A12[User selects a winner];
+        A12 --> A13[Request: POST /api/match/:share_id/score];
+        A13 --> A14["Update 'scoring' field in 'matches' table"];
+    end
+
+    subgraph "Flow 2: Result Sharing & Remix"
+        B1[User visits /share/share_id URL] --> B2[Request: GET /api/match/:share_id];
+        B2 --> B3["Backend queries 'matches' table for share_id"];
+        B3 --> B4(Response: Return full Match Data JSON);
+        B4 --> B5[UI displays read-only results page];
+        B4 --> B6((Remix Button));
+        B6 --> B7[Extract 'meta.recipe' from Match Data];
+        B7 --> B8[Pre-populate Arena UI with the recipe];
+    end
+
+    subgraph "Flow 3: Notebook Generation"
+        C1[User clicks 'Download Notebook'] --> C2[Request: GET /api/notebook?hf_model=...];
+        C2 --> C3[Backend calls Hugging Face Model API];
+        C3 --> C4(Response: Receive Model Metadata & README content);
+        C4 --> C5{Snippet found in README?};
+        C5 -- Yes --> C6[Use extracted snippet];
+        C5 -- No --> C7[Use generic fallback snippet based on pipeline_tag];
+        C6 --> C8[Populate server-side .ipynb template];
+        C7 --> C8;
+        C8 --> C9(Generate complete .ipynb file content);
+        C9 --> C10[Response: Return file to browser for download];
+    end
+
+    %% Stack the flows vertically
+    A14 --> B1
+    B8 --> C1
+
+    style A8 fill:#D5F5E3,stroke:#222
+    style B3 fill:#D5F5E3,stroke:#222
+    style A14 fill:#D5F5E3,stroke:#222
