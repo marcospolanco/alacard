@@ -74,6 +74,28 @@ RLS: disabled for sprint. Only server writes using service key.
   - Behavior: fetch HF model metadata and README; extract first suitable Python snippet or widget text sample; fall back to generic snippet based on `pipeline_tag`.
   - returns: runnable notebook with env setup, HF sample section, and a hello cell. If `share_id` provided, include a markdown cell describing the recipe used (model selection and prompt set) for traceability.
 
+## Components (UI + System)
+
+UI — Sprint scope
+- Arena: Model Cards, Prompt Cards, Recipe Bar; Run action; side‑by‑side Output Viewer with badges (ms, tokens); Winner selector; Share + Remix; Run as Notebook.
+- Share Page: read‑only results (outputs, metrics, winner) and Recipe summary; primary CTA: Remix.
+- Notebook Trigger: button in Arena that calls notebook generator and downloads `.ipynb`.
+
+UI — Optional/next (if time allows)
+- Chat UI (single model): model selector, system prompt, message thread with streaming; mini badges (ms/tokens); “Promote to Arena” to compare against another model using the last N messages as a Prompt Card pack.
+- Presets Manager: simple JSON‑backed list for Model/Prompt Card presets; edit inline and save to `meta.recipe`.
+- Evaluation Panel: lightweight rubric selector and votes UI that populates `scoring.rubric` and `votes`.
+
+System modules
+- Inference adapters: OpenAI and HF Inference API clients with a thin normalization layer (inputs/outputs + timing).
+- Persistence: Supabase `matches` table holding prompts, outputs, scoring, and `meta.recipe`.
+- Notebook generator: server endpoint that assembles a runnable `.ipynb` from HF metadata/README and recipe context.
+- Presets registry: static JSON for sprint; later backed by DB with provenance (source `share_id`).
+- Telemetry/logging (optional): request ids and basic timing to aid demo reliability.
+
+Figma coverage
+- Provide frames for Arena, Share, and a stub Chat UI. Keep visuals matched to the implemented card primitives and Recipe bar. See `alacard/figma-make-docs.md` for notes.
+
 ## Env Vars
 
 - `NEXT_PUBLIC_SUPABASE_URL`

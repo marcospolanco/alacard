@@ -23,3 +23,7 @@ __pycache__/
 
 # Local files
 more-prd-details.txt
+
+# Local notes (ignored)
+/notes/
+!/notes/.gitkeep
