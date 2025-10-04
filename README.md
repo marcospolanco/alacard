@@ -1,4 +1,4 @@
-# Alacard Arena - AI Model Comparison Platform
+# Alacard - AI Model Comparison Platform
 
 A 3-hour sprint implementation of an AI model comparison arena with shareable results and notebook generation.
 
