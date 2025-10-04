@@ -1,0 +1,117 @@
+```mermaid
+graph TB
+    subgraph "User Layer"
+        UI[React/Next.js App]
+    end
+
+    subgraph "Application Layer"
+        Gateway[Node.js API Gateway<br/>Handles user requests]
+        PyAPI[Python Microservice<br/>FastAPI/Flask]
+        IngestionService[Supabase Functions<br/>Ingestion Service]
+    end
+
+    subgraph "AI Core"
+        Agent[Claude Agent SDK]
+        
+        subgraph "Agent Tools"
+            CreateCell[create_cell]
+            ExecCell[execute_cell]
+            ReadRepo[read_file_from_repo]
+            ListFiles[list_files_in_repo]
+        end
+
+        subgraph "Sandboxed Execution"
+            NotebookExecutionPool[Isolated Python Environments]
+        end
+    end
+
+    subgraph "Data & External Services"
+        subgraph "Supabase Platform"
+            Auth[Supabase Auth<br/>GitHub OAuth]
+            
+            subgraph "Database (PostgreSQL)"
+                Users[users table]
+                Workspaces[workspaces table]
+                Repos[repositories table]
+                Models[models table]
+                Cookbooks[cookbooks table]
+                EnvVars[environment_variables table]
+            end
+
+            Storage[Supabase Storage<br/>Repo Files & Notebooks]
+        end
+
+        subgraph "External Services"
+            HF[Hugging Face API]
+            GitHub[GitHub API]
+        end
+    end
+
+    %% --- Connections --- 
+
+    %% User Flow
+    UI --> Gateway
+
+    %% Gateway to Services
+    Gateway -- "Verifies user" --> Auth
+    Gateway -- "Manages data" --> Users
+    Gateway -- "Manages data" --> Workspaces
+    Gateway -- "Manages data" --> Cookbooks
+    Gateway -- "Triggers ingestion" --> IngestionService
+    Gateway -- "Delegates generation" --> PyAPI
+
+    %% Ingestion Flow
+    IngestionService -- "Fetches repo" --> GitHub
+    IngestionService -- "Fetches metadata" --> HF
+    IngestionService -- "Writes repo files" --> Storage
+    IngestionService -- "Writes metadata" --> Repos
+    IngestionService -- "Writes metadata" --> Models
+
+    %% AI Generation Flow
+    PyAPI --> Agent
+    Agent -- "Uses" --> CreateCell
+    Agent -- "Uses" --> ExecCell
+    Agent -- "Uses" --> ReadRepo
+    Agent -- "Uses" --> ListFiles
+    
+    ExecCell -- "Executes code in" --> NotebookExecutionPool
+    ReadRepo -- "Reads from" --> Storage
+    ListFiles -- "Reads from" --> Storage
+
+    %% Style Definitions
+    classDef userLayer fill:#e1f5fe,stroke:#222
+    classDef appLayer fill:#f3e5f5,stroke:#222
+    classDef aiLayer fill:#e8f5e9,stroke:#222
+    classDef dataLayer fill:#fffde7,stroke:#222
+
+    class UI userLayer
+    class Gateway,PyAPI,IngestionService appLayer
+    class Agent,CreateCell,ExecCell,ReadRepo,ListFiles,NotebookExecutionPool aiLayer
+    class Auth,Users,Workspaces,Repos,Models,Cookbooks,EnvVars,Storage,HF,GitHub dataLayer
+```
+
+### Architecture Components Explained
+
+**User Layer (React/Next.js)**
+- User interface for workspace management, recipe building, and notebook previews.
+
+**Application Layer**
+- **API Gateway (Node.js)**: The single entry point for all client requests. It handles authentication, orchestrates calls to other services, and manages user-facing data.
+- **Python Microservice**: A dedicated service that hosts the Claude agent and exposes an endpoint for notebook generation.
+- **Ingestion Service (Supabase Functions)**: A serverless function responsible for cloning repositories from GitHub, fetching metadata from Hugging Face, and storing the results in the Supabase database and storage.
+
+**AI Core**
+- **Claude Agent SDK**: The reasoning engine that drives the notebook creation process.
+- **Agent Tools**: A suite of functions the agent can call to interact with its environment (e.g., create a notebook cell, execute code).
+- **Sandboxed Execution**: Isolated environments where the agent can safely execute code to test and validate the notebook.
+
+**Data & External Services**
+- **Supabase Platform**: Provides the core backend infrastructure, including authentication, the PostgreSQL database, and file storage.
+- **External Services**: Third-party APIs that provide essential data, such as model metadata from Hugging Face and repository access from GitHub.
+
+### Data Flow
+1. The user interacts with the **UI**, sending requests to the **API Gateway**.
+2. For data operations (e.g., listing cookbooks), the Gateway queries the **Supabase Database**.
+3. To start a new cookbook, the Gateway calls the **Python Microservice**.
+4. The **Claude Agent** is invoked, using its **Tools** to read repository data from **Storage** and iteratively build the notebook by running code in the **Sandboxed Execution** environments.
+5. The final, validated notebook is saved back to the **Database** and **Storage** for the user to access.

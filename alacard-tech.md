@@ -42,27 +42,39 @@ The system first collects all necessary context about the model. This involves:
 - Fetching comprehensive metadata for the linked Hugging Face model ID.
 
 ### Step 2: System Prompt Generation
-A sophisticated "system prompt" is dynamically constructed to guide the Claude agent. This is a critical step that transforms the simple user request into a detailed set of instructions for the AI. This prompt will include:
-- The ultimate goal (based on the user's high-level prompt).
-- The chosen **recipe inputs**: the `template` (e.g., "A/B Arena"), `topic` (e.g., "sourdough bread"), and `complexity` level.
-- The full context gathered in Step 1 (repo structure, HF metadata, code examples).
-- A description of the tools available to the agent.
+A sophisticated "system prompt" is dynamically constructed to guide the Claude agent, based on a master template (`starting_generation_prompt.txt`). This is a critical step that transforms the simple user request into a detailed set of instructions for the AI. The prompt is built around a core philosophy: **generate runnable, production-quality code based on real examples, with no placeholders.**
 
-### Step 3: Iterative Generation & Testing
-The Claude agent is invoked with the system prompt and a suite of tools that allow it to interact with a virtual Jupyter notebook environment.
+The dynamically generated prompt will include:
+- **Task Definition**: Instructs the agent it is an expert Python educator.
+- **Available Research Tools**: A description of tools the agent can use to gather context before generating code, such as:
+    - `hf_get_file`: To get example code from the model's Hugging Face repository.
+    - `web_fetch`: To fetch documentation from URLs.
+    - `github_get_file`: To get code examples from related GitHub repositories.
+- **Context**: The full context gathered in Step 1 (repo structure, HF metadata, code examples), along with the user's chosen **recipe inputs** (`template`, `topic`, `complexity`).
+- **Output Format**: A strict JSON schema that the agent's response must follow, detailing the notebook's title, cells (with type, content, and metadata), and sources used.
+- **Critical Rules**: A set of non-negotiable rules, including "Use MCP tools to get REAL code," "No placeholders EVER," and "Include attribution."
 
-**Agent Tools:**
-- `create_cell(code: str, type: 'code' | 'markdown')`: Adds a new cell to the notebook.
+### Step 3: Two-Phase Generation & Testing
+The generation process occurs in two phases: Research & Content Generation, followed by Execution & Validation.
+
+#### Phase 3a: Research & Content Generation
+The Claude agent is first invoked with the system prompt from Step 2. The agent's goal in this phase is not to build the notebook directly, but to perform research using the provided tools (`hf_get_file`, etc.) and then generate a **JSON object** that represents the complete, ideal notebook. This JSON contains all the markdown and code cells planned out, based on the research it conducted.
+
+#### Phase 3b: Iterative Execution & Validation
+The Python service receives the JSON object from the agent. It then enters an iterative loop to build and validate the notebook in a virtual environment using a separate suite of tools:
+
+**Execution Tools:**
+- `create_cell(code: str, type: 'code' | 'markdown')`: Adds a new cell to the notebook from the agent's JSON plan.
 - `execute_cell(cell_id: int) -> dict`: Executes the code in a specific cell and returns the result (`stdout`, `stderr`, `has_error`).
-- `read_file_from_repo(path: str) -> str`: Allows the agent to read files from the ingested repository for context.
+- `read_file_from_repo(path: str) -> str`: Allows the agent to read files from the ingested repository for context during debugging.
 - `list_files_in_repo() -> list[str]`: Lets the agent see the file structure of the repository.
 
 **Iterative Loop:**
-1. The agent, guided by the system prompt, decides to use a tool (e.g., `create_cell` with installation code).
-2. The Python service executes the tool and returns the result to the agent.
-3. The agent then decides on the next action. For example, it might call `execute_cell` to test the installation.
-4. If `execute_cell` returns an error, the agent is prompted to debug the problem, potentially by creating a new cell with corrected code.
-5. This "create -> test -> reflect -> correct" loop continues until the agent has built a complete, working Jupyter notebook that fulfills the user's request.
+1. The service iterates through the `cells` array in the agent's JSON output.
+2. For each cell, it calls `create_cell`.
+3. If the cell is a code cell, it calls `execute_cell`.
+4. If `execute_cell` returns an error, the service can re-invoke the agent with the error context, asking it to debug the problem. The agent might respond with a corrected code snippet or a new JSON plan.
+5. This "create -> test -> reflect -> correct" loop continues until all cells from the plan have been executed successfully.
 6. The final, validated notebook content is saved to the `cookbooks` table.
 
 ## 5. Phased Implementation Plan (Milestones)

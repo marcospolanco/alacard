@@ -1,0 +1,34 @@
+sequenceDiagram
+    actor User
+    participant Frontend as FE (React/Next.js)
+    participant BackendAPI as API (Node.js)
+    participant GenerationService as GenSvc (Python/Claude SDK)
+    participant ExternalServices as (GitHub, Hugging Face)
+    participant ClaudeAgent as Agent
+    participant Database as DB (Supabase)
+
+    User->>FE: 1. Input GitHub Repo & Recipe (template, topic)
+    FE->>API: 2. POST /api/generate (repo_url, recipe)
+    API->>GenSvc: 3. Request Notebook Generation
+
+    GenSvc->>ExternalServices: 4. Ingest Context (Clone Repo, Fetch HF Metadata)
+    ExternalServices-->>GenSvc: Return Repo Files & Model Info
+
+    GenSvc->>GenSvc: 5. Dynamically Construct System Prompt
+
+    GenSvc->>Agent: 6. Invoke Agent with System Prompt & Tools
+
+    loop Iterative Generation & Testing
+        Agent->>GenSvc: Use Tool (e.g., create_cell, execute_cell)
+        Note over Agent,GenSvc: Python service executes the tool call in a virtual notebook environment.
+        GenSvc-->>Agent: Return Tool Result (stdout, stderr, error)
+        Note over Agent: Agent reflects on the result and decides the next step, correcting errors as they arise.
+    end
+
+    Agent-->>GenSvc: 7. Final Validated Notebook
+    GenSvc->>DB: 8. Save Notebook to 'cookbooks' Table
+    DB-->>GenSvc: Confirm Save
+
+    GenSvc-->>API: 9. Generation Successful
+    API-->>FE: 10. Notify UI of Completion
+    FE-->>User: 11. Display Generated Notebook
