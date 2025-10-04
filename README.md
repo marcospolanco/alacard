@@ -86,9 +86,18 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 ### Backend (Next.js API Routes)
 - `/api/models/popular` - Get popular HF models
 - `/api/models/search` - Search models by category
-- `/api/notebook/generate` - Generate notebooks from models
+- `/api/notebook/generate` - Generate notebooks from models (legacy)
 - `/api/notebook/[shareId]` - Fetch notebook metadata
 - `/api/notebook/download/[shareId]` - Download notebook files
+
+### FastAPI Backend (Planned)
+- `GET /api/v1/models/popular` - Get popular HF models
+- `GET /api/v1/models/search` - Search models by category
+- `POST /api/v1/notebook/generate` - Start notebook generation task
+- `GET /api/v1/notebook/task/{task_id}` - Get task status and progress
+- `GET /api/v1/notebook/{share_id}` - Get notebook metadata
+- `GET /api/v1/notebook/download/{share_id}` - Download `.ipynb` file
+- `WebSocket /ws/progress/{task_id}` - Real-time progress updates
 
 ### Database (Supabase)
 - **notebooks** table - Store generated notebooks and metadata
@@ -97,21 +106,50 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 ## API Endpoints
 
-### Model Discovery
+### Next.js API Routes (Current)
 - `GET /api/models/popular` - Get popular HF models
 - `GET /api/models/search?category=text-generation` - Search models by category
+- `POST /api/notebook/generate` - Generate notebook from model (synchronous)
+- `GET /api/notebook/[shareId]` - Get notebook metadata
+- `GET /api/notebook/download/[shareId]` - Download `.ipynb` file
 
-### Notebook Generation
-- `POST /api/notebook/generate` - Generate notebook from model
+### FastAPI Backend (Planned)
+- `GET /api/v1/models/popular` - Get popular HF models
+- `GET /api/v1/models/search?category=text-generation` - Search models by category
+- `POST /api/v1/notebook/generate` - Start asynchronous notebook generation
   ```json
   {
     "hf_model_id": "meta-llama/Llama-3.1-8B-Instruct"
   }
   ```
+  Response: `{"task_id": "uuid", "estimated_time": 30}`
 
-### Notebook Access
-- `GET /api/notebook/[shareId]` - Get notebook metadata
-- `GET /api/notebook/download/[shareId]` - Download `.ipynb` file
+- `GET /api/v1/notebook/task/{task_id}` - Get task status
+  ```json
+  {
+    "status": "processing|completed|failed",
+    "progress": 75,
+    "current_step": "Extracting code from README",
+    "share_id": "abc123" (only when completed)
+  }
+  ```
+
+- `GET /api/v1/notebook/{share_id}` - Get notebook metadata
+- `GET /api/v1/notebook/download/{share_id}` - Download `.ipynb` file
+- `WebSocket /ws/progress/{task_id}` - Real-time progress updates
+
+### WebSocket Progress Updates
+The FastAPI backend provides real-time progress updates via WebSockets:
+```json
+{
+  "type": "progress",
+  "data": {
+    "progress": 45,
+    "current_step": "Generating notebook cells",
+    "message": "Processing model README..."
+  }
+}
+```
 
 ## Supported Model Categories
 

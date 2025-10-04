@@ -375,24 +375,341 @@ const POPULAR_MODELS = [
 - Successful notebook execution in Jupyter/VS Code
 - Mobile-responsive design
 
-## 11. Post-Sprint Enhancement Roadmap
+## 11. Next-Phase Architecture: FastAPI Backend
 
-### 11.1 Immediate Improvements (Next 1-2 days)
+### 11.1 Why FastAPI Backend?
+
+#### Current Limitations
+- **Next.js API Routes**: 10-second execution limit for serverless functions
+- **Long-running Tasks**: Notebook generation often exceeds time limits
+- **Concurrent Users**: Limited scalability for simultaneous generation requests
+- **Background Processing**: No native support for async task queues
+
+#### FastAPI Advantages
+- **No Time Limits**: Long-running notebook generation
+- **Async/Await**: Native async support for concurrent API calls
+- **Background Tasks**: Celery + Redis for job queuing
+- **Performance**: Better CPU-intensive operation handling
+- **WebSocket Support**: Real-time progress updates
+- **Type Safety**: Full TypeScript-like support with Pydantic
+
+### 11.2 Monorepo Architecture
+
+#### New Directory Structure
+```
+alacard/
+├── apps/
+│   ├── web/                 # Next.js frontend
+│   │   ├── pages/
+│   │   ├── components/
+│   │   ├── lib/
+│   │   └── package.json
+│   └── api/                 # FastAPI backend
+│       ├── app/
+│       ├── routers/
+│       ├── services/
+│       ├── models/
+│       ├── workers/
+│       └── requirements.txt
+├── packages/
+│   ├── shared/              # Shared types and utilities
+│   │   ├── types/
+│   │   ├── utils/
+│   │   └── package.json
+│   ├── database/            # Database schemas and migrations
+│   │   ├── models/
+│   │   ├── migrations/
+│   │   └── package.json
+│   └── config/              # Configuration management
+│       ├── environment/
+│       └── package.json
+├── docker-compose.yml
+├── docker-compose.dev.yml
+├── package.json             # Workspace root
+├── pnpm-workspace.yaml
+└── .env.example
+```
+
+#### Package Manager Configuration
+```yaml
+# pnpm-workspace.yaml
+packages:
+  - 'apps/*'
+  - 'packages/*'
+```
+
+### 11.3 FastAPI Backend Architecture
+
+#### Core Services
+```python
+# apps/api/app/services/notebook_service.py
+class NotebookService:
+    async def generate_notebook(self, hf_model_id: str) -> str:
+        # Background task implementation
+        task = generate_notebook_task.delay(hf_model_id)
+        return task.id
+
+    async def get_generation_status(self, task_id: str) -> dict:
+        # Check Celery task status
+        task = AsyncResult(task_id)
+        return {
+            "task_id": task_id,
+            "status": task.state,
+            "result": task.result if task.ready() else None,
+            "error": str(task.info) if task.failed() else None
+        }
+```
+
+#### API Endpoints (FastAPI)
+```python
+# apps/api/app/routers/notebooks.py
+@router.post("/generate")
+async def generate_notebook(
+    request: NotebookGenerationRequest,
+    background_tasks: BackgroundTasks
+):
+    """Initiate notebook generation in background"""
+    task_id = str(uuid.uuid())
+
+    # Start background task
+    background_tasks.add_task(
+        generate_notebook_task,
+        task_id,
+        request.hf_model_id
+    )
+
+    return {
+        "task_id": task_id,
+        "status": "processing",
+        "estimated_time": "15-30 seconds"
+    }
+
+@router.get("/{task_id}/status")
+async def get_generation_status(task_id: str):
+    """Check notebook generation progress"""
+    status = await notebook_service.get_generation_status(task_id)
+    return status
+
+@router.get("/{task_id}/download")
+async def download_notebook(task_id: str):
+    """Download completed notebook"""
+    notebook = await notebook_service.get_completed_notebook(task_id)
+    return FileResponse(
+        notebook.file_path,
+        filename=f"alacard-{notebook.model_name}.ipynb"
+    )
+```
+
+### 11.4 Background Task Implementation
+
+#### Celery Configuration
+```python
+# apps/api/app/workers/celery_app.py
+from celery import Celery
+
+celery_app = Celery(
+    "alacard",
+    broker="redis://localhost:6379/0",
+    backend="redis://localhost:6379/0",
+    include=["app.workers.notebook_tasks"]
+)
+
+@celery_app.task
+def generate_notebook_task(task_id: str, hf_model_id: str):
+    """Background notebook generation"""
+    try:
+        # Step 1: Fetch model metadata
+        model_info = await hf_service.get_model_info(hf_model_id)
+
+        # Step 2: Fetch README content
+        readme_content = await hf_service.get_readme_content(hf_model_id, model_info.sha)
+
+        # Step 3: Extract code snippets
+        code_snippets = await notebook_parser.extract_code_snippets(readme_content)
+
+        # Step 4: Generate notebook
+        notebook_content = notebook_generator.create_notebook(
+            model_info, code_snippets
+        )
+
+        # Step 5: Save to database
+        notebook = await notebook_service.save_notebook(
+            task_id=task_id,
+            hf_model_id=hf_model_id,
+            content=notebook_content,
+            metadata=model_info
+        )
+
+        return {
+            "status": "completed",
+            "notebook_id": notebook.id,
+            "share_id": notebook.share_id
+        }
+
+    except Exception as e:
+        return {
+            "status": "failed",
+            "error": str(e)
+        }
+```
+
+### 11.5 Real-Time Progress Updates
+
+#### WebSocket Support
+```python
+# apps/api/app/routers/websocket.py
+@router.websocket("/ws/{task_id}")
+async def websocket_endpoint(websocket: WebSocket, task_id: str):
+    await websocket.accept()
+
+    # Monitor task progress
+    while True:
+        status = await notebook_service.get_generation_status(task_id)
+        await websocket.send_json(status)
+
+        if status["status"] in ["completed", "failed"]:
+            break
+
+        await asyncio.sleep(2)  # Poll every 2 seconds
+```
+
+#### Frontend WebSocket Client
+```typescript
+// apps/web/lib/websocket-client.ts
+class WebSocketClient {
+  constructor(taskId: string) {
+    this.ws = new WebSocket(`ws://localhost:8000/ws/${taskId}`)
+  }
+
+  onProgress(callback: (status: any) => void) {
+    this.ws.onmessage = (event) => {
+      const status = JSON.parse(event.data)
+      callback(status)
+    }
+  }
+}
+```
+
+### 11.6 Development Environment Setup
+
+#### Local Development Services
+
+**Required Services:**
+- **Redis** - Task queue and caching
+- **PostgreSQL** - Database for notebooks
+- **Python 3.9+** - For FastAPI backend
+- **Node.js 18+** - For Next.js frontend
+
+#### Environment Setup Commands
+```bash
+# Start Redis (install locally or use Homebrew)
+redis-server --port 6379
+
+# Start PostgreSQL (install locally or use Homebrew)
+initdb -D /usr/local/var/postgres
+createuser alacard
+createdb alacard
+psql alacard < setup_database.sql
+
+# Start Celery Worker
+celery -A app.workers.celery_app worker --loglevel=info
+
+# Start FastAPI Server
+uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+# Start Next.js Frontend
+npm run dev
+```
+
+#### Environment Configuration
+```bash
+# .env
+DATABASE_URL=postgresql://alacard:password@localhost:5432/alacard
+REDIS_URL=redis://localhost:6379/0
+HF_API_TOKEN=your_huggingface_token
+```
+
+### 11.7 Migration Strategy
+
+#### Phase 1: Infrastructure Setup
+1. Set up monorepo with pnpm workspace
+2. Create FastAPI backend structure
+3. Configure Docker development environment
+4. Set up Redis and PostgreSQL services
+
+#### Phase 2: Backend Migration
+1. Port API logic from Next.js to FastAPI
+2. Implement Celery background tasks
+3. Add async database operations
+4. Create WebSocket support for progress updates
+
+#### Phase 3: Frontend Updates
+1. Update API client to use FastAPI endpoints
+2. Implement WebSocket progress updates
+3. Add error handling for long-running operations
+4. Update TypeScript types to match backend
+
+#### Phase 4: Testing & Deployment
+1. End-to-end testing of notebook generation
+2. Performance optimization for concurrent users
+3. Manual production deployment (no Docker)
+4. Monitoring and logging configuration
+
+### 11.8 Performance Improvements
+
+#### Concurrent Generation
+- **Async Processing**: Multiple notebooks can generate simultaneously
+- **Queue Management**: Celery prevents system overload
+- **Resource Pooling**: Efficient resource utilization
+
+#### Caching Strategy
+- **Model Metadata**: Cache HF API responses
+- **README Content**: Cache parsed README data
+- **Generated Notebooks**: Cache frequently requested notebooks
+
+#### Error Handling
+- **Retry Logic**: Automatic retry for failed HF API calls
+- **Graceful Degradation**: Fallback to template-based generation
+- **Task Monitoring**: Track failed tasks and retry automatically
+
+### 11.9 Implementation Timeline
+
+**Week 1: Infrastructure & Basic Migration**
+- Set up monorepo structure
+- Implement basic FastAPI endpoints
+- Migrate notebook generation logic
+- Set up background task processing
+
+**Week 2: Advanced Features**
+- Implement WebSocket progress updates
+- Add caching layers
+- Optimize database queries
+- Add comprehensive error handling
+
+**Week 3: Production Readiness**
+- Docker containerization
+- Monitoring and logging
+- Performance testing
+- CI/CD pipeline setup
+
+## 12. Post-Sprint Enhancement Roadmap
+
+### 12.1 Immediate Improvements (Next 1-2 weeks)
 - **Authentication**: Add user accounts for personal notebook libraries
 - **Advanced Search**: Enhanced model filtering and sorting
 - **Notebook Customization**: Allow users to modify generated notebooks
 - **Analytics Dashboard**: Track popular models and usage patterns
 
-### 11.2 Feature Expansion (Next 1-2 weeks)
+### 12.2 Feature Expansion (Next 1-2 months)
 - **Model Categories**: Expand to cover more specialized model types
 - **Notebook Library**: Community collection of generated notebooks
 - **Integration Options**: Export to Google Colab, Kaggle
 - **Advanced Templates**: Multi-model notebooks and workflow templates
 
-### 11.3 Scalability Planning (Next 1-2 months)
-- **Background Processing**: Queue-based notebook generation
-- **Caching Layer**: Improve performance for popular models
+### 12.3 Scalability Planning (Next 2-3 months)
 - **Multi-Region Deployment**: Global distribution for faster access
 - **Enterprise Features**: Private model support and team collaboration
+- **API Rate Limiting**: Prevent abuse and ensure fair usage
+- **Cost Optimization**: Efficient resource usage and scaling
 
-This technical strategy provides a clear roadmap for implementing a focused notebook generation platform that delivers immediate value while maintaining scalability for future enhancements.
+This enhanced architecture addresses the fundamental limitations of serverless functions while providing a robust foundation for scaling the notebook generation platform.

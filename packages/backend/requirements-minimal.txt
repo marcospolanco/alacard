@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+celery[redis]
+redis
+websockets
+httpx
+psycopg2-binary
+pydantic
+pydantic-settings
+python-multipart
+python-dotenv

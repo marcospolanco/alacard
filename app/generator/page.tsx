@@ -8,7 +8,9 @@ import CategoryFilter from '@/components/CategoryFilter'
 import LoadingSpinner from '@/components/LoadingSpinner'
 import NotebookResult from '@/components/NotebookResult'
 import { POPULAR_MODELS, DEFAULT_MODEL } from '@/lib/presets'
-import { ModelCard as ModelCardType, NotebookGenerationResponse } from '@/types'
+import { BackendAPI } from '@/lib/backend-api'
+import { useWebSocketProgress } from '@/hooks/useWebSocketProgress'
+import { ModelCard as ModelCardType, NotebookGenerationResponse, TaskStatus } from '@/types'
 
 export default function Generator() {
   const searchParams = useSearchParams()
@@ -18,6 +20,7 @@ export default function Generator() {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
   const [isGenerating, setIsGenerating] = useState(false)
   const [generationResult, setGenerationResult] = useState<NotebookGenerationResponse | null>(null)
+  const [currentTaskId, setCurrentTaskId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   // Load popular models on mount
@@ -36,18 +39,38 @@ export default function Generator() {
     }
   }, [searchParams, popularModels])
 
+  // WebSocket progress tracking
+  const { progress, isConnected, usePolling } = useWebSocketProgress(currentTaskId)
+
+  // Handle progress updates
+  useEffect(() => {
+    if (progress) {
+      if (progress.status === 'completed' && progress.share_id) {
+        setIsGenerating(false)
+        setGenerationResult({
+          shareId: progress.share_id,
+          modelId: selectedModel?.modelId || '',
+          modelInfo: selectedModel
+        })
+        setCurrentTaskId(null)
+      } else if (progress.status === 'failed') {
+        setIsGenerating(false)
+        setError(progress.error || 'Generation failed')
+        setCurrentTaskId(null)
+      }
+    }
+  }, [progress, selectedModel])
+
   const loadPopularModels = async () => {
     try {
-      const response = await fetch('/api/models/popular')
-      if (response.ok) {
-        const data = await response.json()
-        setPopularModels(data.models)
-        setFilteredModels(data.models)
+      const models = await BackendAPI.getPopularModels()
+      setPopularModels(models)
+      setFilteredModels(models)
 
-        // Select default model if none selected
-        if (!selectedModel) {
-          const defaultModel = data.models.find(m => m.modelId === DEFAULT_MODEL)
-          if (defaultModel) {
+      // Select default model if none selected
+      if (!selectedModel) {
+        const defaultModel = models.find(m => m.modelId === DEFAULT_MODEL)
+        if (defaultModel) {
             setSelectedModel(defaultModel)
           }
         }
@@ -64,16 +87,22 @@ export default function Generator() {
     setError(null)
   }
 
-  const handleCategoryChange = (category: string | null) => {
+  const handleCategoryChange = async (category: string | null) => {
     setSelectedCategory(category)
 
     if (category) {
-      const filtered = popularModels.filter(model =>
-        model.category === category ||
-        model.tags.includes(category) ||
-        model.pipeline_tag === category
-      )
-      setFilteredModels(filtered)
+      try {
+        const models = await BackendAPI.searchModels(category)
+        setFilteredModels(models)
+      } catch (error) {
+        console.error('Error searching models:', error)
+        // Fall back to client-side filtering
+        const filtered = popularModels.filter(model =>
+          model.pipeline_tag === category ||
+          model.tags.includes(category)
+        )
+        setFilteredModels(filtered)
+      }
     } else {
       setFilteredModels(popularModels)
     }
@@ -87,33 +116,25 @@ export default function Generator() {
     setGenerationResult(null)
 
     try {
-      const response = await fetch('/api/notebook/generate', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          hf_model_id: selectedModel.modelId
-        }),
-      })
+      const taskResponse = await BackendAPI.generateNotebook(selectedModel.modelId)
+      setCurrentTaskId(taskResponse.task_id)
 
-      if (!response.ok) {
-        throw new Error('Failed to generate notebook')
-      }
-
-      const data = await response.json()
-      setGenerationResult(data)
     } catch (error) {
       console.error('Error generating notebook:', error)
       setError('Failed to generate notebook. Please try again.')
-    } finally {
       setIsGenerating(false)
+      setCurrentTaskId(null)
     }
   }
 
-  const handleDownload = () => {
+  const handleDownload = async () => {
     if (generationResult) {
-      window.open(generationResult.notebook_url, '_blank')
+      try {
+        await BackendAPI.downloadNotebook(generationResult.shareId)
+      } catch (error) {
+        console.error('Error downloading notebook:', error)
+        setError('Failed to download notebook')
+      }
     }
   }
 
@@ -137,7 +158,52 @@ export default function Generator() {
 
         {/* Generation Status */}
         {isGenerating && (
-          <LoadingSpinner message="Generating notebook from model README..." />
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 mb-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-500"></div>
+              <span className="text-blue-700 font-medium">
+                Generating notebook...
+                {isConnected && (
+                  <span className="text-green-600 ml-2 text-sm">
+                    ● Connected via WebSocket
+                  </span>
+                )}
+                {usePolling && (
+                  <span className="text-orange-600 ml-2 text-sm">
+                    ● Using polling fallback
+                  </span>
+                )}
+              </span>
+            </div>
+
+            {progress && (
+              <div className="space-y-3">
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-blue-600">
+                    {progress.current_step || 'Processing...'}
+                  </span>
+                  <span className="text-sm text-blue-600 font-medium">
+                    {progress.progress}%
+                  </span>
+                </div>
+
+                <div className="w-full bg-blue-200 rounded-full h-2">
+                  <div
+                    className="bg-blue-500 h-2 rounded-full transition-all duration-300 ease-out"
+                    style={{ width: `${progress.progress}%` }}
+                  ></div>
+                </div>
+
+                {progress.message && (
+                  <p className="text-sm text-blue-600">{progress.message}</p>
+                )}
+
+                {progress.error && (
+                  <p className="text-sm text-red-600">{progress.error}</p>
+                )}
+              </div>
+            )}
+          </div>
         )}
 
         {/* Error Display */}

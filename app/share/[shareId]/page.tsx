@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { Notebook } from '@/types'
+import { BackendAPI } from '@/lib/backend-api'
 
 export default function SharePage() {
   const params = useParams()
@@ -22,30 +23,28 @@ export default function SharePage() {
   const loadNotebook = async () => {
     try {
       setLoading(true)
-      const response = await fetch(`/api/notebook/${shareId}`)
-
-      if (!response.ok) {
-        if (response.status === 404) {
-          setError('Notebook not found')
-        } else {
-          setError('Failed to load notebook')
-        }
-        return
-      }
-
-      const data = await response.json()
+      const data = await BackendAPI.getNotebook(shareId)
       setNotebook(data)
     } catch (err) {
-      setError('Failed to load notebook')
+      if (err instanceof Error && err.message.includes('404')) {
+        setError('Notebook not found')
+      } else {
+        setError('Failed to load notebook')
+      }
       console.error('Error loading notebook:', err)
     } finally {
       setLoading(false)
     }
   }
 
-  const handleDownload = () => {
+  const handleDownload = async () => {
     if (notebook) {
-      window.open(`/api/notebook/download/${shareId}`, '_blank')
+      try {
+        await BackendAPI.downloadNotebook(shareId)
+      } catch (error) {
+        console.error('Error downloading notebook:', error)
+        setError('Failed to download notebook')
+      }
     }
   }
 
