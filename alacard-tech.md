@@ -1,204 +1,398 @@
-# Alacard - Technical Strategy (3-Hour Supabase Sprint)
+# Alacard - Technical Strategy (Notebook Generator)
 
 ## 1. Overview
-This document outlines the technical strategy for building "Alacard," a notebook generation platform for a 3-hour demo sprint. This strategy is derived from the [latest PRD](./alacard-prd_2025.10.04.1420.md) and focuses on delivering a live demo with HF model selection, notebook generation, and sharing capabilities.
+This document outlines the technical strategy for building "Alacard," a notebook generation platform that creates downloadable Jupyter notebooks from Hugging Face models. This strategy is derived from the [latest PRD](./alacard-prd_2025.10.04.1420.md) and focuses on delivering a working demo with HF model selection, automated notebook generation, and sharing capabilities.
 
-## 2. Core Architecture & Technical Stack (Sprint-Focused)
-The platform is built for a 3-hour demo sprint with a lean, single-path architecture.
+## 2. Core Architecture & Technical Stack
+The platform is built for a 3-hour demo sprint with a lean, focused architecture.
 
-- **Frontend**: **React/Next.js** - Single-page application with Notebook Generator and Share pages.
-- **Backend**: **Node.js API Routes** - Server-side calls to Hugging Face Model API for metadata and README fetching.
-- **Database**: **Supabase (PostgreSQL)** - Single table `notebooks` with JSON payloads for simplicity.
-- **AI & External Integrations**:
-    - **Hugging Face Model API**: For fetching model metadata, README examples, and popular model lists.
-    - **Hugging Face Files API**: For fetching model README files and code snippets.
-- **Authentication**: **Disabled for sprint** - Anonymous writes with service key only.
-- **Notebook Generation**: Server-side template-based `.ipynb` generation from HF README sources.
+### Frontend Layer
+- **React/Next.js** - Single-page application with model selection and notebook generation interface
+- **Tailwind CSS** - Responsive UI components with clean design
+- **TypeScript** - Type-safe development and better developer experience
 
-## 3. Minimal Supabase Schema (Sprint Implementation)
-Single table design to reduce complexity and enable rapid development.
+### Backend Layer
+- **Node.js API Routes** - Server-side API endpoints for model fetching and notebook generation
+- **Hugging Face API Integration** - Model metadata retrieval and README content fetching
+- **Template Engine** - Server-side `.ipynb` generation from README code snippets
 
+### Database Layer
+- **Supabase (PostgreSQL)** - Serverless database for storing generated notebooks and share metadata
+- **JSON Storage** - Notebook content stored as JSON for efficient retrieval
+- **Public Access** - No authentication required for demo (anonymous access)
+
+### External Integrations
+- **Hugging Face Model API** - Fetch model metadata, descriptions, and popular model lists
+- **Hugging Face Files API** - Retrieve model README files and extract code examples
+- **Hugging Face Hub API** - Get model card information and usage statistics
+
+## 3. Database Schema Design
+
+### Primary Table: `notebooks`
 ```sql
-create extension if not exists pgcrypto;
-
-create table if not exists public.notebooks (
-  id uuid primary key default gen_random_uuid(),
-  created_at timestamptz not null default now(),
-  share_id text unique not null,
-  hf_model_id text not null,
-  notebook_content jsonb not null,
-  metadata jsonb           -- { model_info: {...}, source_readme: string, generated_by: 'alacard' }
+CREATE TABLE IF NOT EXISTS public.notebooks (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  share_id TEXT UNIQUE NOT NULL,
+  hf_model_id TEXT NOT NULL,
+  notebook_content JSONB NOT NULL,
+  metadata JSONB,
+  download_count INTEGER DEFAULT 0
 );
 
-create index if not exists notebooks_share_idx on public.notebooks(share_id);
-create index if not exists notebooks_model_idx on public.notebooks(hf_model_id);
+-- Indexes for performance
+CREATE INDEX IF NOT EXISTS notebooks_share_idx ON public.notebooks(share_id);
+CREATE INDEX IF NOT EXISTS notebooks_model_idx ON public.notebooks(hf_model_id);
+CREATE INDEX IF NOT EXISTS notebooks_created_idx ON public.notebooks(created_at DESC);
 ```
 
-**Key Design Decisions:**
-- **No RLS for sprint** - Only server writes using service role key
-- **JSON payloads** - Store notebook content and metadata as JSON to avoid joins
-- **Share ID** - Unique identifier for public sharing notebooks
-- **Model metadata** - Store model information and README source for provenance
+### Schema Rationale
+- **Single Table Design**: Simplifies architecture for 3-hour sprint
+- **JSON Storage**: Notebook content stored as JSON for flexible structure
+- **Share IDs**: Publicly accessible identifiers for sharing notebooks
+- **Metadata**: Rich context about model source and generation parameters
+- **Analytics**: Download counting for popular model identification
 
-## 4. Core API Endpoints (Sprint Implementation)
+## 4. API Endpoints Specification
 
-### Notebook Generation
-- `POST /api/notebook` → Generate and save notebook
-  - Request: `{ hf_model_id: string }`
-  - Response: `{ share_id, notebook_url: "/api/notebook/download/{share_id}" }`
+### 4.1 Notebook Generation Endpoints
 
-- `GET /api/notebook/:share_id` → Fetch notebook metadata
-  - Response: Full notebook row JSON with model information
+#### `POST /api/notebook/generate`
+Creates a new notebook for a specified Hugging Face model.
 
-- `GET /api/notebook/download/:share_id` → Download `.ipynb`
-  - Returns downloadable Jupyter notebook file (.ipynb format)
-  - Fetches HF model metadata and README
-  - Extracts first suitable Python snippet or widget example
-  - Falls back to generic snippet based on `pipeline_tag`
-
-### Model Management
-- `GET /api/models/popular` → Get popular models list
-  - Response: `[{ id: string, name: string, description: string, downloads: number, pipeline_tag: string }]`
-  - Predefined curated list of popular HF models for quick selection
-
-## 5. Notebook Generation Flow
-
-### 5.1. Model Selection Interface
-- **Popular Models Grid**: Curated list of popular HF models with descriptions and download counts
-- **Model Categories**: Organized by task type (Chat, Text Generation, Classification, etc.)
-- **Model Details**: Shows model info, pipeline tag, and description when selected
-
-### 5.2. Notebook Generation Process
-1. Client sends selected `hf_model_id` to `/api/notebook`
-2. Server fetches model metadata from Hugging Face Model API
-3. Server retrieves README content and extracts code snippets
-4. Notebook is generated with:
-   - Environment setup cell
-   - Model-specific hello cell
-   - Extracted code example from README
-   - Model metadata and attribution
-
-### 5.3. Sharing & Downloading
-- **Share Page**: Read-only view with model info and download button
-- **Generate New Button**: Opens generator with same model pre-selected
-- **Direct Download**: `.ipynb` file ready for Jupyter/VS Code execution
-
-## 6. Notebook Generation Pipeline (Template-Based)
-
-### 6.1. HF Model Sourcing Logic
-1. **Model Metadata**: GET `https://huggingface.co/api/models/{hf_model_id}`
-2. **README Extraction**: Fetch README at latest commit SHA
-3. **Code Snippet Extraction**:
-   - First Python fenced block from README
-   - Fallback to first code-fenced text prompt
-   - Final fallback to generic `pipeline_tag` snippet
-
-### 6.2. Notebook Template Structure
-```
-Cell 1: Markdown - "Alacard | {hf_model_id} Quickstart" + license + link
-Cell 2: Code - Environment setup (transformers, huggingface_hub, requests)
-Cell 3: Code - Hello cell (minimal API call verification)
-Cell 4: Markdown - "Samples from Model Card"
-Cell 5: Code - Runnable sample from README (sanitized)
-Cell 6: Markdown - "Recipe used" (if share_id provided)
-Cell 7: Markdown - Next steps + back to share link
+**Request Body:**
+```json
+{
+  "hf_model_id": "meta-llama/Llama-3.1-8B-Instruct"
+}
 ```
 
-### 6.3. Supported Model Categories
-- **Text Generation**: Story writing, content creation models
-- **Chat & Dialogue**: Conversational AI, instruction following
-- **Classification & NER**: Text analysis, entity extraction
-- **Summarization**: Long-form text summarization
-- **Code Generation**: Programming and code completion
-- **Translation**: Multi-language translation models
+**Response:**
+```json
+{
+  "share_id": "abc12345",
+  "notebook_url": "/api/notebook/download/abc12345",
+  "model_info": {
+    "name": "Llama-3.1-8B-Instruct",
+    "pipeline_tag": "text-generation",
+    "downloads": 1250000,
+    "likes": 2340
+  }
+}
+```
 
-## 7. Sprint Timeline (3-Hour Implementation)
+#### `GET /api/notebook/:shareId`
+Retrieves notebook metadata and model information.
 
-### 0:00–0:20: Setup & Infrastructure
-- Create Supabase table with schema
-- Set environment variables (Supabase, HF tokens)
-- Scaffold routes: `/generator`, `/share/[shareId]`, `/api/*`
+**Response:**
+```json
+{
+  "id": "uuid-here",
+  "share_id": "abc12345",
+  "hf_model_id": "meta-llama/Llama-3.1-8B-Instruct",
+  "created_at": "2024-01-15T10:30:00Z",
+  "download_count": 15,
+  "metadata": {
+    "model_info": {...},
+    "source_readme_sha": "commit-sha-here",
+    "generated_by": "alacard"
+  }
+}
+```
 
-### 0:20–1:05: Notebook Generator Core
-- Implement hardcoded popular model presets
-- Build `POST /api/notebook` endpoint
-- HF API integration for model metadata and README fetching
-- Template-based `.ipynb` generation
-- Model selection UI components
+#### `GET /api/notebook/download/:shareId`
+Downloads the generated notebook as a `.ipynb` file.
 
-### 1:05–1:50: Share & Download Flow
-- Implement `GET /api/notebook/:shareId` endpoint
-- Build `GET /api/notebook/download/:shareId` for direct download
-- Create `/share/[shareId]` page with model info
-- Add "Generate New" button for same model selection
+**Headers:**
+- `Content-Type: application/json`
+- `Content-Disposition: attachment; filename="alacard-model-name.ipynb"`
 
-### 1:50–2:20: Popular Models Endpoint
+### 4.2 Model Discovery Endpoints
+
+#### `GET /api/models/popular`
+Returns a curated list of popular Hugging Face models.
+
+**Response:**
+```json
+{
+  "models": [
+    {
+      "id": "meta-llama/Llama-3.1-8B-Instruct",
+      "name": "Llama-3.1-8B-Instruct",
+      "description": "Meta's Llama 3.1 model with 8B parameters",
+      "pipeline_tag": "text-generation",
+      "downloads": 1250000,
+      "likes": 2340,
+      "tags": ["text-generation", "llama", "conversational"]
+    }
+  ]
+}
+```
+
+#### `GET /api/models/search`
+Search for models by category or keyword.
+
+**Query Parameters:**
+- `category`: text-generation, classification, etc.
+- `limit`: number of results (default 20)
+
+## 5. Notebook Generation Pipeline
+
+### 5.1 Data Retrieval Process
+
+1. **Model Metadata Fetch**
+   - GET `https://huggingface.co/api/models/{hf_model_id}`
+   - Extract `pipeline_tag`, `tags`, `modelId`, `sha`
+   - Get download counts, likes, and model information
+
+2. **README Content Retrieval**
+   - GET `https://huggingface.co/{hf_model_id}/raw/{sha}/README.md`
+   - Parse markdown content for code blocks
+   - Extract Python code examples and usage patterns
+
+3. **Code Snippet Extraction Strategy**
+   - **Priority 1**: First Python fenced block from README
+   - **Priority 2**: First code block with any language
+   - **Priority 3**: Generic template based on `pipeline_tag`
+   - **Fallback**: Basic `transformers` pipeline example
+
+### 5.2 Notebook Template Structure
+
+Generated notebooks follow a consistent 7-cell structure:
+
+```
+Cell 1: Markdown - Title & Attribution
+Cell 2: Code - Environment Setup (transformers, huggingface_hub)
+Cell 3: Code - Hello Cell (model verification)
+Cell 4: Markdown - Model Information
+Cell 5: Code - Extracted README Example
+Cell 6: Code - Generic Usage Example
+Cell 7: Markdown - Next Steps & Resources
+```
+
+### 5.3 Template Customization by Model Type
+
+**Text Generation Models:**
+```python
+from transformers import AutoTokenizer, AutoModelForCausalLM
+tokenizer = AutoTokenizer.from_pretrained(model_id)
+model = AutoModelForCausalLM.from_pretrained(model_id)
+inputs = tokenizer("Your prompt here", return_tensors="pt")
+outputs = model.generate(**inputs, max_length=100)
+```
+
+**Classification Models:**
+```python
+from transformers import pipeline
+classifier = pipeline("text-classification", model=model_id)
+result = classifier("This is a sample text for classification.")
+```
+
+**Translation Models:**
+```python
+from transformers import pipeline
+translator = pipeline("translation", model=model_id)
+result = translator("Hello, how are you?", src_lang="en", tgt_lang="es")
+```
+
+## 6. Frontend Architecture
+
+### 6.1 Page Structure
+
+#### Generator Page (`/generator`)
+- **Model Selection Grid**: Popular models with cards showing name, description, downloads
+- **Category Filters**: Browse models by task type (Text Gen, Classification, etc.)
+- **Search Bar**: Direct model search functionality
+- **Generate Button**: One-click notebook generation
+- **Loading States**: Progress indicators during generation
+
+#### Share Page (`/share/[shareId]`)
+- **Model Information Display**: Model details, usage statistics
+- **Download Button**: Direct notebook download
+- **Generate New Button**: Create notebook with same model
+- **Usage Statistics**: Download count and creation date
+
+#### Home Page (`/`)
+- **Landing Page**: Product overview and feature highlights
+- **Quick Start**: Popular models for immediate notebook generation
+- **How It Works**: Step-by-step process explanation
+
+### 6.2 Component Architecture
+
+```typescript
+// Core Components
+<ModelCard />          // Individual model selection card
+<ModelGrid />           // Grid layout for model browsing
+<CategoryFilter />      // Model category filtering
+<SearchBar />           // Model search functionality
+<GenerateButton />      // Notebook generation trigger
+<LoadingSpinner />      // Generation progress indicator
+<SharePreview />        // Notebook metadata display
+```
+
+### 6.3 State Management
+
+```typescript
+// Application State
+interface AppState {
+  selectedModel: Model | null;
+  popularModels: Model[];
+  isGenerating: boolean;
+  generatedNotebook: Notebook | null;
+  searchQuery: string;
+  selectedCategory: string;
+}
+```
+
+## 7. Error Handling & Fallbacks
+
+### 7.1 API Failure Scenarios
+
+**Hugging Face API Rate Limited:**
+- Serve pre-generated popular notebooks
+- Display "API temporarily unavailable" banner
+- Queue requests for retry when available
+
+**README Parsing Failed:**
+- Use generic template based on model pipeline tag
+- Include model metadata in notebook header
+- Add note about source extraction failure
+
+**Supabase Write Failed:**
+- Generate notebook client-side for immediate download
+- Store in browser localStorage as backup
+- Display "Share feature temporarily unavailable" message
+
+### 7.2 Fallback Notebook Templates
+
+Pre-built templates for common model types:
+- **Text Generation**: Basic generation pipeline
+- **Classification**: Zero-shot classification example
+- **Translation**: Language translation pipeline
+- **Summarization**: Document summarization example
+
+## 8. Implementation Timeline (3-Hour Sprint)
+
+### Phase 1: Infrastructure (0:00–0:30)
+- Set up Supabase database with notebooks table
+- Configure environment variables (Supabase, HF API)
+- Create Next.js project structure
+- Set up basic routing (`/generator`, `/share/[shareId]`)
+
+### Phase 2: Backend API (0:30–1:30)
 - Implement `GET /api/models/popular` endpoint
-- Create model category filtering
-- Build model cards with descriptions and metadata
+- Create `POST /api/notebook/generate` endpoint
+- Build notebook template generation logic
+- Implement README parsing and code extraction
+- Add error handling and fallbacks
 
-### 2:20–2:45: Figma Polish & Demo Prep
-- Align Figma frames to working UI; add model cards and download flows
-- Script the 90‑second demo narrative
+### Phase 3: Frontend Interface (1:30–2:15)
+- Create model selection grid with popular models
+- Implement notebook generation UI
+- Build loading states and progress indicators
+- Add search and category filtering
 
-### 2:45–3:00: Buffer & Fail-safes
-- Add static fallback notebooks if HF APIs fail; pre-generate sample notebook files.
-- Final testing and demo rehearsal
+### Phase 4: Share & Download Flow (2:15–2:45)
+- Implement share page with model information
+- Create download functionality for `.ipynb` files
+- Add "Generate New" button for same model
+- Implement sharing and analytics
 
-## 8. Environment Variables & Configuration
+### Phase 5: Polish & Testing (2:45–3:00)
+- Add responsive design and UI polish
+- Test error scenarios and fallbacks
+- Prepare demo flow and talking points
+- Generate sample notebooks for testing
+
+## 9. Environment Configuration
+
+### 9.1 Required Environment Variables
 
 ```bash
-# Supabase
+# Supabase Configuration
 NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 
-# AI APIs
+# Hugging Face API
 HF_API_TOKEN=your-huggingface-token
 
-# Presets (hardcoded for sprint)
-POPULAR_MODELS=["meta-llama/Llama-3.1-8B-Instruct", "microsoft/DialoGPT-medium", "distilbert-base-uncased"]
-DEFAULT_MODEL="meta-llama/Llama-3.1-8B-Instruct"
+# Application Configuration
+NODE_ENV=development
+PORT=3000
 ```
 
-## 9. Risk Mitigation & Fast Fallbacks
+### 9.2 Popular Models Configuration
 
-### API Failure Handling
-- **HF README lacks runnable snippet** → Generic `transformers` or Inference API snippet
-- **Inference rate-limited** → Pre-baked cached outputs with banner
-- **Supabase write fails** → In-memory fallback for demo continuity
+```typescript
+// Popular models for quick access
+const POPULAR_MODELS = [
+  {
+    id: "meta-llama/Llama-3.1-8B-Instruct",
+    name: "Llama-3.1-8B-Instruct",
+    category: "text-generation",
+    description: "Meta's advanced conversational AI model"
+  },
+  {
+    id: "microsoft/DialoGPT-medium",
+    name: "DialoGPT Medium",
+    category: "conversational",
+    description: "Microsoft's conversational AI model"
+  },
+  {
+    id: "distilbert-base-uncased",
+    name: "DistilBERT Base",
+    category: "classification",
+    description: "Lightweight BERT model for text classification"
+  }
+];
+```
 
-### UI Simplification Paths
-- **Card UI too complex** → Dropdowns + textareas (keep Recipe summary)
-- **Time constraints** → Remove winner voting, display static results
-- **Notebook generation fails** → Static template download
+## 10. Success Criteria & Validation
 
-## 10. Success Criteria (Demo Validation)
+### 10.1 Functional Requirements
+✅ **Core Feature Completion:**
+- Model selection interface with popular models
+- Automated notebook generation from README sources
+- Downloadable `.ipynb` files with working code examples
+- Shareable links for generated notebooks
 
-✅ **Live Demo Requirements:**
-- End-to-end model comparison without manual data entry
-- Shareable link loads identical results in fresh browser
-- Downloaded notebook runs successfully with verified hello cell
-- Remix functionality preserves complete recipe context
+✅ **Performance Requirements:**
+- Notebook generation completes within 15 seconds
+- Share page loads within 2 seconds
+- Model browsing and search are responsive
+- Error handling provides graceful fallbacks
 
-✅ **Technical Validation:**
-- Arena API calls complete under 10 seconds total
-- Share page loads in under 2 seconds
-- Notebook generation completes in under 15 seconds
-- All endpoints handle errors gracefully with fallbacks
+### 10.2 Technical Validation
+✅ **API Endpoints:**
+- All endpoints respond correctly with proper error codes
+- Notebook generation handles various model types
+- Database operations complete successfully
+- File downloads work across browsers
 
-## 11. Post-Sprint Roadmap (Next 1-2 Days)
+✅ **User Experience:**
+- Intuitive model selection interface
+- Clear feedback during generation process
+- Successful notebook execution in Jupyter/VS Code
+- Mobile-responsive design
 
-### Immediate Enhancements
-- Add RLS + simple authentication
-- HF Inference adapter integration for more OSS models
-- Basic evaluator rubric with HTML report export
+## 11. Post-Sprint Enhancement Roadmap
 
-### Feature Expansion
-- Community Recipes: publish, fork, and remix with provenance
-- Visual polish: card selection animations, themed palettes
-- Advanced metrics: token usage, cost analysis, performance trends
+### 11.1 Immediate Improvements (Next 1-2 days)
+- **Authentication**: Add user accounts for personal notebook libraries
+- **Advanced Search**: Enhanced model filtering and sorting
+- **Notebook Customization**: Allow users to modify generated notebooks
+- **Analytics Dashboard**: Track popular models and usage patterns
 
-### Scalability Planning
-- Multi-user workspaces with proper RLS
-- Environment variable management per user
-- Advanced notebook templates with multi-task support
+### 11.2 Feature Expansion (Next 1-2 weeks)
+- **Model Categories**: Expand to cover more specialized model types
+- **Notebook Library**: Community collection of generated notebooks
+- **Integration Options**: Export to Google Colab, Kaggle
+- **Advanced Templates**: Multi-model notebooks and workflow templates
+
+### 11.3 Scalability Planning (Next 1-2 months)
+- **Background Processing**: Queue-based notebook generation
+- **Caching Layer**: Improve performance for popular models
+- **Multi-Region Deployment**: Global distribution for faster access
+- **Enterprise Features**: Private model support and team collaboration
+
+This technical strategy provides a clear roadmap for implementing a focused notebook generation platform that delivers immediate value while maintaining scalability for future enhancements.
