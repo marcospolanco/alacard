@@ -1,105 +1,213 @@
-# AI Model Cookbook Generator - Technical Strategy
+# Alacard - Technical Strategy (3-Hour Supabase Sprint)
 
 ## 1. Overview
-This document outlines the technical strategy for building the "AI Model Cookbook Generator," a platform that ingests GitHub repositories for Hugging Face models and generates customized Jupyter notebook "cookbooks." This strategy is derived from the [PRD](./alacard-prd.md) and details the architecture, data models, and implementation phases required to bring the product to life.
+This document outlines the technical strategy for building "Alacard," a model comparison arena and notebook generation platform for a 3-hour demo sprint. This strategy is derived from the [latest PRD](./alacard-prd_2025.10.04.1420.md) and focuses on delivering a live demo with model comparison, shareable results, and notebook generation.
 
-## 2. Core Architecture & Technical Stack
-The platform will be built on a modern web stack designed for scalability, security, and rapid development.
+## 2. Core Architecture & Technical Stack (Sprint-Focused)
+The platform is built for a 3-hour demo sprint with a lean, single-path architecture.
 
-- **Frontend**: **React/Next.js** - For a fast, server-rendered UI with excellent developer experience.
-- **Backend**: A hybrid approach featuring:
-    - **Node.js (Fastify/Express)**: For the primary public-facing API (handling user requests, workspace management, etc.).
-    - **Python (FastAPI/Flask)**: A dedicated microservice for the AI generation pipeline, built specifically to leverage the **Claude Agent SDK for Python**.
-- **Database**: **Supabase (PostgreSQL)** - Provides a robust database, authentication, file storage, and serverless functions, with Row Level Security (RLS) as a core security feature.
-- **Authentication**: **Supabase Auth** - Manages user sign-up, login, and session management. It will also handle OAuth for GitHub.
-- **File Storage**: **Supabase Storage** - For storing cloned repository files and generated notebooks securely, segregated by workspace and user.
+- **Frontend**: **React/Next.js** - Single-page application with Arena and Share pages.
+- **Backend**: **Node.js API Routes** - Server-side calls to OpenAI and Hugging Face Inference APIs.
+- **Database**: **Supabase (PostgreSQL)** - Single table `matches` with JSON payloads for simplicity.
 - **AI & External Integrations**:
-    - **Anthropic Claude Agent SDK**: The core engine for iteratively generating and testing the Jupyter notebooks.
-    - **Hugging Face API**: For fetching model metadata and details.
-    - **GitHub API**: For repository ingestion, requiring user authentication via OAuth.
+    - **OpenAI API**: For model comparison (`gpt-4o-mini` vs `gpt-4o`).
+    - **Hugging Face Inference API**: For OSS model comparison (e.g., `meta-llama/Llama-3.1-8B-Instruct`).
+    - **Hugging Face Model API**: For fetching model metadata and README examples for notebook generation.
+- **Authentication**: **Disabled for sprint** - Anonymous writes with service key only.
+- **Notebook Generation**: Server-side template-based `.ipynb` generation from HF sources.
 
-## 3. Detailed Data Model (Supabase)
-The database schema is designed to be secure and scalable, with RLS enforced on all tables to ensure data isolation.
+## 3. Minimal Supabase Schema (Sprint Implementation)
+Single table design to reduce complexity and enable rapid development.
 
-| Table | Columns | Description |
-|---|---|---|
-| **users** | `id` (uuid), `email`, `auth_provider_token` (encrypted) | Stores user identity. GitHub OAuth tokens are encrypted at rest. |
-| **workspaces** | `id` (uuid), `name`, `owner_id` (fk: users.id) | The primary organizational unit for a user's work. |
-| **workspace_members** | `workspace_id` (fk), `user_id` (fk), `role` | **(Phase 3)** Join table to enable multi-user collaboration in shared workspaces. |
-| **environment_variables**| `id` (uuid), `workspace_id` (fk), `key_name`, `encrypted_value` | Securely stores user API keys and other secrets, encrypted at rest. |
-| **repositories** | `id` (uuid), `workspace_id` (fk), `github_url`, `hf_model_id` | Tracks ingested repositories linked to a workspace. |
-| **models** | `id` (uuid), `hf_model_id`, `metadata` (jsonb), `cached_at` | Caches metadata from the Hugging Face API to reduce latency and API hits. |
-| **cookbooks** | `id` (uuid), `repository_id` (fk), `prompt`, `notebook_content` (jsonb), `template` (text), `topic` (text), `complexity` (text), `is_public` (bool), `forked_from_id` (fk) | Stores generated notebooks, their recipe inputs, and community feature flags. |
-| **usage_tracking** | `id` (uuid), `user_id` (fk), `action_type`, `metadata` (jsonb) | Tracks key user actions for analytics and future billing. |
+```sql
+create extension if not exists pgcrypto;
 
-## 4. Claude Agent-Based Generation Pipeline
-The notebook generation process is an iterative, three-step process orchestrated by the Python backend service using the Claude Agent SDK.
+create table if not exists public.matches (
+  id uuid primary key default gen_random_uuid(),
+  created_at timestamptz not null default now(),
+  share_id text unique not null,
+  model_a text not null,
+  model_b text not null,
+  system_prompt text,
+  prompts jsonb not null,
+  outputs jsonb,           -- { items: [{prompt, a, b, a_ms, b_ms}] }
+  scoring jsonb,           -- { winner: 'A'|'B'|'tie', votes: {...}, rubric: {...} }
+  meta jsonb               -- { client_version, notes, recipe: { models: [model_a, model_b], prompts: [p1,p2,p3], title, emoji } }
+);
 
-### Step 1: Ingestion & Context Gathering
-The system first collects all necessary context about the model. This involves:
-- Cloning the specified GitHub repository.
-- Parsing the repository to understand its structure, find example scripts, and identify dependencies (`requirements.txt`, etc.).
-- Fetching comprehensive metadata for the linked Hugging Face model ID.
+create index if not exists matches_share_idx on public.matches(share_id);
+```
 
-### Step 2: System Prompt Generation
-A sophisticated "system prompt" is dynamically constructed to guide the Claude agent, based on a master template (`starting_generation_prompt.txt`). This is a critical step that transforms the simple user request into a detailed set of instructions for the AI. The prompt is built around a core philosophy: **generate runnable, production-quality code based on real examples, with no placeholders.**
+**Key Design Decisions:**
+- **No RLS for sprint** - Only server writes using service role key
+- **JSON payloads** - Store prompts, outputs, and metadata as JSON to avoid joins
+- **Share ID** - Unique identifier for public sharing and remixing
+- **Recipe metadata** - Complete card selection stored in `meta.recipe` for remix functionality
 
-The dynamically generated prompt will include:
-- **Task Definition**: Instructs the agent it is an expert Python educator.
-- **Available Research Tools**: A description of tools the agent can use to gather context before generating code, such as:
-    - `hf_get_file`: To get example code from the model's Hugging Face repository.
-    - `web_fetch`: To fetch documentation from URLs.
-    - `github_get_file`: To get code examples from related GitHub repositories.
-- **Context**: The full context gathered in Step 1 (repo structure, HF metadata, code examples), along with the user's chosen **recipe inputs** (`template`, `topic`, `complexity`).
-- **Output Format**: A strict JSON schema that the agent's response must follow, detailing the notebook's title, cells (with type, content, and metadata), and sources used.
-- **Critical Rules**: A set of non-negotiable rules, including "Use MCP tools to get REAL code," "No placeholders EVER," and "Include attribution."
+## 4. Core API Endpoints (Sprint Implementation)
 
-### Step 3: Two-Phase Generation & Testing
-The generation process occurs in two phases: Research & Content Generation, followed by Execution & Validation.
+### Match Management
+- `POST /api/match` → Create and run model comparison
+  - Request: `{ model_a, model_b, system_prompt, prompts: [string] }`
+  - Response: `{ share_id, outputs: [{prompt, a, b, a_ms, b_ms}] }`
 
-#### Phase 3a: Research & Content Generation
-The Claude agent is first invoked with the system prompt from Step 2. The agent's goal in this phase is not to build the notebook directly, but to perform research using the provided tools (`hf_get_file`, etc.) and then generate a **JSON object** that represents the complete, ideal notebook. This JSON contains all the markdown and code cells planned out, based on the research it conducted.
+- `POST /api/match/:share_id/score` → Store winner selection
+  - Request: `{ winner: 'A'|'B'|'tie', votes?: {...}, rubric?: {...} }`
+  - Response: `{ ok: true }`
 
-#### Phase 3b: Iterative Execution & Validation
-The Python service receives the JSON object from the agent. It then enters an iterative loop to build and validate the notebook in a virtual environment using a separate suite of tools:
+- `GET /api/match/:share_id` → Fetch match results
+  - Response: Full match row JSON including recipe metadata
 
-**Execution Tools:**
-- `create_cell(code: str, type: 'code' | 'markdown')`: Adds a new cell to the notebook from the agent's JSON plan.
-- `execute_cell(cell_id: int) -> dict`: Executes the code in a specific cell and returns the result (`stdout`, `stderr`, `has_error`).
-- `read_file_from_repo(path: str) -> str`: Allows the agent to read files from the ingested repository for context during debugging.
-- `list_files_in_repo() -> list[str]`: Lets the agent see the file structure of the repository.
+### Notebook Generation
+- `GET /api/notebook?hf_model={org/name}&task=chat&share_id=...` → Download `.ipynb`
+  - Fetches HF model metadata and README
+  - Extracts first suitable Python snippet or widget example
+  - Falls back to generic snippet based on `pipeline_tag`
+  - Returns runnable notebook with:
+    - Environment setup cell
+    - Hello cell (minimal verification)
+    - HF sample section
+    - Recipe metadata (if share_id provided)
 
-**Iterative Loop:**
-1. The service iterates through the `cells` array in the agent's JSON output.
-2. For each cell, it calls `create_cell`.
-3. If the cell is a code cell, it calls `execute_cell`.
-4. If `execute_cell` returns an error, the service can re-invoke the agent with the error context, asking it to debug the problem. The agent might respond with a corrected code snippet or a new JSON plan.
-5. This "create -> test -> reflect -> correct" loop continues until all cells from the plan have been executed successfully.
-6. The final, validated notebook content is saved to the `cookbooks` table.
+## 5. Model Comparison Arena Flow
 
-## 5. Phased Implementation Plan (Milestones)
+### 5.1. Card Deck Interface
+- **Model Cards**: Selectable tiles showing `gpt-4o-mini` vs `gpt-4o` or HF models
+- **Prompt Cards**: 3-pack of predefined prompts with inline editing
+- **Recipe Bar**: Visual summary of selected models and prompts
 
-### Phase 1: Foundation & Ingestion
-*   **Goal**: Establish core infrastructure and the ability to ingest public repositories.
-*   **Features**:
-    *   User authentication (email/password, GitHub OAuth).
-    *   Workspace creation (single-user).
-    *   Supabase schema setup.
-    *   Backend service to ingest public GitHub repos and sync metadata from Hugging Face.
+### 5.2. Comparison Execution
+1. Client sends selected models and prompts to `/api/match`
+2. Server calls OpenAI/HF Inference APIs in parallel
+3. Results stored with latency metrics and token counts
+4. Side-by-side display with performance badges
 
-### Phase 2: Generation MVP
-*   **Goal**: Deliver the core value proposition: generating a useful notebook via the Claude agent.
-*   **Features**:
-    *   Set up the Python generation service.
-    *   Implement the **Claude Agent SDK** with a basic set of tools (`create_cell`, `execute_cell`).
-    *   Build the System Prompt Generation logic, incorporating the new recipe inputs.
-    *   Implement secure environment variable management.
-    *   Build the UI for the "Recipe Builder" and notebook preview.
+### 5.3. Sharing & Remixing
+- **Share Page**: Read-only view with results and recipe summary
+- **Remix Button**: Opens Arena with pre-selected cards from `meta.recipe`
+- **Persistent Links**: Shareable URLs that load identical results
 
-### Phase 3: Expansion & Collaboration
-*   **Goal**: Enhance the generation process and introduce community features.
-*   **Features**:
-    *   Implement multi-user collaboration in shared workspaces.
-    *   Implement cookbook sharing (`is_public`) and forking (`forked_from_id`).
-    *   Expand the agent's toolset (e.g., file writing, more complex environment inspection).
-    *   Introduce more sophisticated notebook templates.
+## 6. Notebook Generation Pipeline (Template-Based)
+
+### 6.1. HF Model Sourcing Logic
+1. **Model Metadata**: GET `https://huggingface.co/api/models/{hf_model_id}`
+2. **README Extraction**: Fetch README at latest commit SHA
+3. **Code Snippet Extraction**:
+   - First Python fenced block from README
+   - Fallback to first code-fenced text prompt
+   - Final fallback to generic `pipeline_tag` snippet
+
+### 6.2. Notebook Template Structure
+```
+Cell 1: Markdown - "Alacard | {hf_model_id} Quickstart" + license + link
+Cell 2: Code - Environment setup (transformers, huggingface_hub, requests)
+Cell 3: Code - Hello cell (minimal API call verification)
+Cell 4: Markdown - "Samples from Model Card"
+Cell 5: Code - Runnable sample from README (sanitized)
+Cell 6: Markdown - "Recipe used" (if share_id provided)
+Cell 7: Markdown - Next steps + back to share link
+```
+
+### 6.3. Template Categories
+- **"Speed vs Smarts"** ⚡🧠: `gpt-4o-mini` vs `Llama-3.1-8B-Instruct`
+- **"Structured Output Showdown"** 🧩: JSON-focused prompts
+- **"Security Lens"** 🛡️: Security-focused prompt variations
+
+## 7. Sprint Timeline (3-Hour Implementation)
+
+### 0:00–0:20: Setup & Infrastructure
+- Create Supabase table with schema
+- Set environment variables (Supabase, OpenAI, HF tokens)
+- Scaffold routes: `/arena`, `/share/[share_id]`, `/api/*`
+
+### 0:20–1:05: Arena Happy Path
+- Implement hardcoded model presets
+- Build `POST /api/match` with OpenAI/HF Inference API calls
+- Create Model/Prompt Card UI components
+- Wire selection state to request payload and `meta.recipe` serialization
+- Display side-by-side outputs with performance metrics
+
+### 1:05–1:50: Notebook Generator
+- Implement `GET /api/notebook` endpoint
+- HF API integration for model metadata and README fetching
+- Template-based `.ipynb` generation
+- Hello cell verification (dry run validation)
+
+### 1:50–2:20: Share Page & Remixing
+- Implement `GET /api/match/:share_id` endpoint
+- Build `/share/[share_id]` page with recipe summary
+- Add "Remix" CTA linking to `/arena?from={share_id}`
+
+### 2:20–2:45: Figma Polish & Demo Prep
+- Align Figma frames to working UI
+- Add Model/Prompt card visuals and Recipe bar
+- Script 90-second demo narrative
+
+### 2:45–3:00: Buffer & Fail-safes
+- Add static fallback outputs for API failures
+- Pre-generate sample share link and notebook file
+- Final testing and demo rehearsal
+
+## 8. Environment Variables & Configuration
+
+```bash
+# Supabase
+NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+
+# AI APIs
+OPENAI_API_KEY=your-openai-key
+HF_API_TOKEN=your-huggingface-token
+
+# Presets (hardcoded for sprint)
+DEFAULT_MODELS=["openai:gpt-4o-mini", "hf:meta-llama/Llama-3.1-8B-Instruct"]
+DEFAULT_SYSTEM_PROMPT="Helpful assistant; answer concisely."
+DEFAULT_PROMPTS=[
+  "Explain RAG in one paragraph for a product manager.",
+  "Write a JSON schema for a blog post with title, body, tags.",
+  "List 5 risks of LLM evaluations and a quick mitigation for each."
+]
+```
+
+## 9. Risk Mitigation & Fast Fallbacks
+
+### API Failure Handling
+- **HF README lacks runnable snippet** → Generic `transformers` or Inference API snippet
+- **Inference rate-limited** → Pre-baked cached outputs with banner
+- **Supabase write fails** → In-memory fallback for demo continuity
+
+### UI Simplification Paths
+- **Card UI too complex** → Dropdowns + textareas (keep Recipe summary)
+- **Time constraints** → Remove winner voting, display static results
+- **Notebook generation fails** → Static template download
+
+## 10. Success Criteria (Demo Validation)
+
+✅ **Live Demo Requirements:**
+- End-to-end model comparison without manual data entry
+- Shareable link loads identical results in fresh browser
+- Downloaded notebook runs successfully with verified hello cell
+- Remix functionality preserves complete recipe context
+
+✅ **Technical Validation:**
+- Arena API calls complete under 10 seconds total
+- Share page loads in under 2 seconds
+- Notebook generation completes in under 15 seconds
+- All endpoints handle errors gracefully with fallbacks
+
+## 11. Post-Sprint Roadmap (Next 1-2 Days)
+
+### Immediate Enhancements
+- Add RLS + simple authentication
+- HF Inference adapter integration for more OSS models
+- Basic evaluator rubric with HTML report export
+
+### Feature Expansion
+- Community Recipes: publish, fork, and remix with provenance
+- Visual polish: card selection animations, themed palettes
+- Advanced metrics: token usage, cost analysis, performance trends
+
+### Scalability Planning
+- Multi-user workspaces with proper RLS
+- Environment variable management per user
+- Advanced notebook templates with multi-task support
