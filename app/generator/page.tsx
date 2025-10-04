@@ -75,7 +75,7 @@ export default function Generator() {
       const response = await fetch(`/api/cards/${cardType}`)
       if (response.ok) {
         const data = await response.json()
-        setAvailableCards(prev => ({ ...prev, [cardType]: data.cards }))
+        setAvailableCards((prev: any) => ({ ...prev, [cardType]: data.cards }))
       } else {
         setError(`Failed to fetch ${cardType} cards`)
       }

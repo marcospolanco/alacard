@@ -364,7 +364,7 @@ st.set_page_config(
 )
 
 st.title("${modelId.split('/').pop()} Interactive Dashboard")
-st.markdown(f"Powered by `{modelId}`")
+st.markdown("Powered by model: " + "${modelId}")
 
 @st.cache_resource
 def load_model():

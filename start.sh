@@ -141,7 +141,7 @@ pnpm install
 echo -e "${BLUE}🔄 Starting Celery worker...${NC}"
 cd packages/backend
 source venv/bin/activate
-celery -A app.core.celery_app worker --loglevel=info --pool=solo &
+celery -A app.core.celery_app worker --loglevel=debug --pool=solo > celery.log 2>&1 &
 CELERY_PID=$!
 cd ../..
 

@@ -51,6 +51,13 @@ export interface ModelCard {
   category?: string
 }
 
+export interface PromptCard {
+  id: string
+  text: string
+  category?: string
+  emoji?: string
+}
+
 export interface PromptCardPack {
   id: string
   name: string
@@ -171,4 +178,35 @@ export interface LegacyRecipe {
   title?: string
   models?: ModelCard[]
   prompts?: Array<{ id: string; text: string; emoji?: string }>
+}
+
+// Task Status (for progress tracking)
+export type TaskStatus = 'pending' | 'running' | 'completed' | 'failed'
+
+// Match Type (for arena functionality)
+export interface Match {
+  id?: string
+  share_id: string
+  model_a: string
+  model_b: string
+  system_prompt?: string
+  prompts: string[]
+  outputs: {
+    items: Array<{
+      prompt: string
+      a: string
+      b: string
+      a_ms: number
+      b_ms: number
+    }>
+  }
+  meta?: {
+    recipe?: {
+      models: string[]
+      prompts: string[]
+      title: string
+      emoji: string
+    }
+  }
+  created_at?: string
 }

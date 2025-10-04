@@ -19,10 +19,10 @@ export function useWebSocketProgress(taskId: string | null) {
     pollingIntervalRef.current = setInterval(async () => {
       if (taskId) {
         try {
-          const status = await BackendAPI.getTaskStatus(taskId)
-          setProgress(status)
+          const statusResponse = await BackendAPI.getTaskStatus(taskId)
+          setProgress(statusResponse.status as TaskStatus)
 
-          if (status.status === 'completed' || status.status === 'failed') {
+          if (statusResponse.status === 'completed' || statusResponse.status === 'failed') {
             if (pollingIntervalRef.current) {
               clearInterval(pollingIntervalRef.current)
             }
@@ -74,7 +74,7 @@ export function useWebSocketProgress(taskId: string | null) {
           setIsConnected(false)
 
           // If we lose connection and task isn't complete, start polling
-          if (progress && progress.status !== 'completed' && progress.status !== 'failed') {
+          if (progress && progress !== 'completed' && progress !== 'failed') {
             startPolling()
           }
         }
@@ -84,7 +84,7 @@ export function useWebSocketProgress(taskId: string | null) {
           setError('WebSocket connection failed')
 
           // Fall back to polling
-          if (progress && progress.status !== 'completed' && progress.status !== 'failed') {
+          if (progress && progress !== 'completed' && progress !== 'failed') {
             startPolling()
           }
         }

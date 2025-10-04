@@ -10,7 +10,7 @@ import asyncio
 from typing import Dict, Any
 
 @celery_app.task(bind=True)
-def generate_notebook_task(self, hf_model_id: str) -> Dict[str, Any]:
+async def generate_notebook_task(self, hf_model_id: str) -> Dict[str, Any]:
     """Background task to generate a notebook from a Hugging Face model"""
 
     task_id = self.request.id
@@ -39,7 +39,7 @@ def generate_notebook_task(self, hf_model_id: str) -> Dict[str, Any]:
 
         # Run async methods in sync context
         try:
-            model_info = asyncio.run(hf_service.get_model_info(hf_model_id))
+            model_info = await hf_service.get_model_info(hf_model_id)
             if not model_info:
                 raise ValueError(f"Model {hf_model_id} not found")
 
@@ -53,7 +53,7 @@ def generate_notebook_task(self, hf_model_id: str) -> Dict[str, Any]:
             )
 
             generator = NotebookGenerator()
-            notebook_data = asyncio.run(generator.generate_notebook(hf_model_id))
+            notebook_data = await generator.generate_notebook(hf_model_id)
         except Exception as e:
             raise e
 
@@ -67,10 +67,10 @@ def generate_notebook_task(self, hf_model_id: str) -> Dict[str, Any]:
         )
 
         validator = NotebookValidator()
-        validation_result = asyncio.run(validator.validate_notebook(
+        validation_result = await validator.validate_notebook(
             {"cells": notebook_data["cells"], "metadata": notebook_data["metadata"]},
             hf_model_id
-        ))
+        )
 
         if validation_result["overall_status"] != "success":
             # If validation fails, include validation details in the response
