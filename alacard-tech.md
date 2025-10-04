@@ -29,7 +29,7 @@ The database schema is designed to be secure and scalable, with RLS enforced on 
 | **environment_variables**| `id` (uuid), `workspace_id` (fk), `key_name`, `encrypted_value` | Securely stores user API keys and other secrets, encrypted at rest. |
 | **repositories** | `id` (uuid), `workspace_id` (fk), `github_url`, `hf_model_id` | Tracks ingested repositories linked to a workspace. |
 | **models** | `id` (uuid), `hf_model_id`, `metadata` (jsonb), `cached_at` | Caches metadata from the Hugging Face API to reduce latency and API hits. |
-| **cookbooks** | `id` (uuid), `repository_id` (fk), `prompt`, `notebook_content` (jsonb) | Stores the generated notebooks and the prompts that created them. |
+| **cookbooks** | `id` (uuid), `repository_id` (fk), `prompt`, `notebook_content` (jsonb), `template` (text), `topic` (text), `complexity` (text), `is_public` (bool), `forked_from_id` (fk) | Stores generated notebooks, their recipe inputs, and community feature flags. |
 | **usage_tracking** | `id` (uuid), `user_id` (fk), `action_type`, `metadata` (jsonb) | Tracks key user actions for analytics and future billing. |
 
 ## 4. Claude Agent-Based Generation Pipeline
@@ -43,10 +43,10 @@ The system first collects all necessary context about the model. This involves:
 
 ### Step 2: System Prompt Generation
 A sophisticated "system prompt" is dynamically constructed to guide the Claude agent. This is a critical step that transforms the simple user request into a detailed set of instructions for the AI. This prompt will include:
-- The ultimate goal (based on the user's prompt).
+- The ultimate goal (based on the user's high-level prompt).
+- The chosen **recipe inputs**: the `template` (e.g., "A/B Arena"), `topic` (e.g., "sourdough bread"), and `complexity` level.
 - The full context gathered in Step 1 (repo structure, HF metadata, code examples).
 - A description of the tools available to the agent.
-- Instructions on the desired structure of the "cookbook" (e.g., "Start with environment setup, then a simple validation, then address the user's specific task").
 
 ### Step 3: Iterative Generation & Testing
 The Claude agent is invoked with the system prompt and a suite of tools that allow it to interact with a virtual Jupyter notebook environment.
@@ -80,14 +80,14 @@ The Claude agent is invoked with the system prompt and a suite of tools that all
 *   **Features**:
     *   Set up the Python generation service.
     *   Implement the **Claude Agent SDK** with a basic set of tools (`create_cell`, `execute_cell`).
-    *   Build the System Prompt Generation logic.
+    *   Build the System Prompt Generation logic, incorporating the new recipe inputs.
     *   Implement secure environment variable management.
-    *   Build the UI for prompt input, notebook preview, and download.
+    *   Build the UI for the "Recipe Builder" and notebook preview.
 
 ### Phase 3: Expansion & Collaboration
-*   **Goal**: Enhance the generation process and introduce collaboration.
+*   **Goal**: Enhance the generation process and introduce community features.
 *   **Features**:
     *   Implement multi-user collaboration in shared workspaces.
+    *   Implement cookbook sharing (`is_public`) and forking (`forked_from_id`).
     *   Expand the agent's toolset (e.g., file writing, more complex environment inspection).
-    *   Introduce incremental complexity and more sophisticated notebook templates.
-    *   Build out the model exploration and search interface.
+    *   Introduce more sophisticated notebook templates.

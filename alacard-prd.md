@@ -16,87 +16,21 @@ Now back to the doc. Here’s how I’d elevate this PRD to make it crisp and ba
 
 ## 🧠 TL;DR
 
-We’re building a platform that ingests GitHub repositories tied to Hugging Face models, extracts useful metadata and code patterns, and turns that into user-customized, AI-generated Jupyter notebook “cookbooks.” These cookbooks guide users from environment setup to advanced usage, tailored to their specific prompt or task.
-
-## 🧭 Goals
-
-### 🎯 Business Goals
-
-* Reduce time-to-value for ML engineers and researchers using open-source models
-* Increase adoption of Hugging Face models by improving usability
-* Unlock monetization via usage-based pricing or workspace tiers
-
-### 👩‍💻 User Goals
-
-* Quickly understand how to use a model with relevant examples
-* Get runnable code tailored to their problem without reading full repos or docs
-* Safely manage secrets and environment setup
-
-### 🚫 Non-Goals
-
-*   We will not support model training or fine-tuning pipelines (in V1).
-*   The service does not provide a user-facing notebook execution environment like Google Colab. While the AI agent uses a sandboxed backend environment to *validate* the notebook, users cannot run or edit notebooks within the application.
-
-## 🧍 User Stories
-
-1. *“I found a cool model on Hugging Face but don’t know how to use it.”*
-2. *“I want to generate a working notebook that sets up, tests, and demonstrates the model with my data.”*
-3. *“I need to securely store my API keys and download the generated code.”*
-
-## 🧩 User Experience Flow
-
-1. **Sign Up + Workspace Creation**
-
-   * User signs up with email/password or OAuth
-   * Creates a named workspace
-
-2. **Model Discovery or Repo Ingestion**
-
-   * Option 1: Paste GitHub repo URL tied to a HF model
-   * Option 2: Search and browse Hugging Face models via integrated API
-
-3. **System Ingests Model**
-
-   * Parses repo structure and content
-   * Extracts examples, metadata, and config files
-   * Links to Hugging Face model ID
-   * Fetches comprehensive model metadata:
-     - Model info: modelId, author, sha, createdAt, lastModified, downloads, likes, tags
-     - Model card data: description, usage, limitations, license, citation
-     - Pipeline information: supported tasks, input/output formats
-     - File structure: model files, configuration files, examples
-     - Community metrics: downloads, likes, discussion activity
-
-4. **Prompt Input**
-
-   * User enters what they’re trying to do (“Summarize news articles”)
-   * Optional: upload sample data or choose task type
-
-5. **Cookbook Generation & Validation**
-
-   * The system invokes a specialized Claude AI agent designed to act like a developer relations engineer.
-   * The agent is given a clear goal (based on the user's prompt) and a set of tools to write, test, and debug code within a sandboxed Jupyter environment.
-   * **Iterative Build-Test-Debug Loop**: The agent doesn't just write code; it validates it. It will write a block of code for installation, execute it, and check for errors. If an error occurs, it will attempt to fix it. This cycle repeats for setup, basic usage, and advanced examples, ensuring the final notebook is runnable out-of-the-box.
-   * The process covers environment setup, dependency installation, model instantiation, and a progression from basic to advanced usage, all tailored to the user's prompt.
-
-6. **Review + Download**
-
-   * User can preview the validated, runnable notebook.
-   * Download .ipynb or copy to clipboard.
+With over 2 million models on Hugging Face, most go unused because they are poorly documented and hard to set up. We are building the **IKEA assembly layer for AI**: a platform that lets users instantly generate runnable, educational Jupyter Notebooks for any model. By allowing users to mix-and-match models, tasks, and complexity levels, we empower them to easily try, compare, and adopt the best model for their needs, not just the most popular one.
 
 ## 🧙‍♂️ Narrative
 
-Imagine you’re a data scientist on a deadline. You found a Hugging Face model that looks promising — but it’s just a bunch of files and a README. You need to see it work, fast.
+Imagine you’re a data scientist on a deadline. A new, promising model just dropped on Hugging Face, but its documentation is sparse. The old way: spend hours wrestling with setup, only to have it fail and move on. The new way: The Cookbook Generator.
 
-Enter the Cookbook Generator. Paste the repo or pick a model, tell us what you want to do, and we’ll generate a clear, runnable Jupyter notebook just for you. It sets up the environment, tests the model, and walks you through use cases — from “hello world” to expert-level. Less Googling, more building.
+Think of it like a recipe. Your main ingredient is the AI model you want to try. You then add a task (like a chat UI or an A/B comparison arena), a topic for the examples ("sourdough bread"), and a complexity level ("beginner"). Paste the repo, tell us what you want to do, and we’ll generate a clear, runnable Jupyter notebook just for you. It sets up the environment, tests the model, and walks you through use cases — from “hello world” to expert-level. Less wrestling, more building. Less vibe-checking, more confident comparing.
 
 ## 📊 Success Metrics
 
-* Avg. time-to-notebook generated < 2 mins
-* % of notebooks run without user modification > 80%
-* User satisfaction score (CSAT/NPS) from onboarding survey
-* Number of cookbooks generated per active user
-* Hugging Face model coverage (most-used models supported)
+*   **Model Diversity**: Increase in the variety of non-major (non-top 10) models used to generate cookbooks.
+*   Avg. time-to-notebook generated < 2 mins
+*   % of notebooks run without user modification > 80%
+*   User satisfaction score (CSAT/NPS) from onboarding survey
+*   Number of cookbooks generated per active user
 
 ## 🏗️ Technical Considerations
 
@@ -108,15 +42,26 @@ Enter the Cookbook Generator. Paste the repo or pick a model, tell us what you w
 
 ## 🎨 User Interface Components
 
-* Dashboard with workspace overview
-* Repository browser with search and filtering
-* Model exploration interface
-* Prompt engineering workspace
-* Environment variables management (secure API key storage)
-* Model validation and testing interface
-* Step-by-step guidance with incremental complexity
-* Notebook preview and editor
-* Export options (download, copy, share)
+*   Dashboard with workspace overview
+*   Repository browser with search and filtering
+*   Model exploration interface
+*   **Recipe Builder / Prompt Workspace**:
+    *   Template Selector (e.g., Chat UI, A/B Arena)
+    *   Example Topic input field
+    *   Complexity Level slider/selector
+*   Environment variables management (secure API key storage)
+*   Notebook preview and editor
+*   Export options (download, copy, share)
+
+4. **Prompt & Recipe Input**
+
+   * User enters a high-level prompt for their goal (e.g., “Summarize news articles”).
+   * **Recipe Selection**:
+     - **Task/Template**: User selects a template, like "Chat UI," "A/B Arena," or "Basic Inference."
+     - **Example Topic**: User provides an optional topic, like "sourdough bread," to theme the examples.
+     - **Complexity Level**: User chooses a level, like "Beginner" or "Advanced."
+
+5. **Cookbook Generation & Validation**
 
 ## 🔧 Detailed Generation Pipeline
 
@@ -155,9 +100,9 @@ The generation process is orchestrated in three main stages:
 
 ### Phase 3 - Expansion (XX weeks)
 
-* Incremental complexity templates (basic → advanced)
-* Notebook preview + versioning
-* Multi-user collaboration in shared workspaces
+*   Incremental complexity templates (basic → advanced)
+*   **Community Features**: Introduce sharing, forking, and user improvements for generated notebooks.
+*   Multi-user collaboration in shared workspaces.
 
 ## 🔍 Open Questions
 
