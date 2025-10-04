@@ -1,7 +1,17 @@
-# dependencies
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Dependencies
 /node_modules
 /.pnp
 .pnp.js
+/venv
+
+# Python
+__pycache__/
+*.pyc
 
 # testing
 /coverage
@@ -12,6 +22,7 @@
 
 # production
 /build
+/dist
 
 # misc
 .DS_Store
@@ -21,10 +32,10 @@
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+*.log
 
 # local env files
 .env*.local
-.env
 
 # vercel
 .vercel
@@ -32,3 +43,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Local files
+more-prd-details.txt
