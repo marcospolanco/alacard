@@ -6,6 +6,7 @@ interface ComparisonResult {
   b: string
   a_ms: number
   b_ms: number
+  emoji?: string
 }
 
 interface ComparisonResultsProps {
