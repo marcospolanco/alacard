@@ -129,7 +129,9 @@ A platform that ingests GitHub repositories corresponding to Hugging Face models
 - Row Level Security (RLS) for user data isolation
 - Database functions for complex queries
 - Triggers for usage tracking
+- Encrypted storage for environment variables and API keys
 - Storage buckets for repository files and generated notebooks
+- Cached model reference library (system-wide, not per-user)
 
 ## Open Questions & Considerations
 - How to handle private repositories and authentication?
