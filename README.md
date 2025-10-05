@@ -306,6 +306,70 @@ Edit the notebook generation logic in `lib/notebook-generator.ts` to customize:
 4. **Share Notebook**: Copy share link and open in fresh browser
 5. **Generate More**: Use "Generate New" button for same model
 
+## Testing
+
+### Workflow Test Script
+
+A comprehensive workflow test script is available to validate the entire notebook generation pipeline:
+
+```bash
+# Set up Python environment for testing
+python3 -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+pip install requests
+
+# Run the workflow test
+python3 workflow_test.py
+```
+
+The workflow test script (`workflow_test.py`) performs comprehensive testing of the Alacard platform:
+
+#### Test Coverage
+
+1. **Service Availability**: Checks if FastAPI, Redis, and other services are running
+2. **API Validation**: Tests request validation and error handling for malformed requests
+3. **Error Handling**: Validates proper handling of invalid models and error cases
+4. **Model Validation**: Verifies HuggingFace model existence before generation
+5. **Success Workflow**: Tests complete notebook generation with real models
+6. **Notebook Retrieval**: Validates notebook metadata and content retrieval
+7. **Validation Results**: Confirms generated notebooks pass syntax and runtime validation
+
+#### Usage
+
+Run the test script while services are running (`./start.sh` or `./quick-start.sh`):
+
+```bash
+python3 workflow_test.py
+```
+
+The script will prompt for a HuggingFace model ID to test with:
+- **Default model**: `microsoft/DialoGPT-medium` (press Enter to use)
+- **Custom models**: Enter any valid HuggingFace model ID (e.g., `facebook/bart-large-cnn`)
+
+#### Test Flow
+
+1. ✅ **Service Check** - Verifies all required services are running
+2. ✅ **API Validation** - Tests request validation and error responses
+3. ✅ **Error Handling** - Tests invalid model handling
+4. 🆕 **Model Validation** - Checks if the specified model exists on HuggingFace
+5. 🧪 **Success Workflow** - Full notebook generation pipeline
+6. 📊 **Results Validation** - Verifies notebook content and validation results
+
+#### Output
+
+The script provides colored output with:
+- **✅ PASS** - Successful tests
+- **❌ FAIL** - Failed tests with error details
+- **⏳ PROCESSING** - Background task monitoring
+- **📊 RESULTS** - Detailed test summary
+
+#### Requirements
+
+- Python 3.6+
+- `requests` library
+- Running Alacard services (FastAPI, Redis)
+- Internet connection for HuggingFace model validation
+
 ## Technology Stack
 
 ### Frontend
