@@ -2,10 +2,10 @@ const { createClient } = require('@supabase/supabase-js')
 require('dotenv').config()
 
 const supabaseUrl = 'https://ngmflfioyfefmxwtayyk.supabase.co'
-const serviceKey = process.env.SUPABASE_SERVICE_KEY
+const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 
 if (!serviceKey) {
-  throw new Error('SUPABASE_SERVICE_KEY is not set in your .env file')
+  throw new Error('SUPABASE_SERVICE_ROLE_KEY is not set in your .env file')
 }
 
 const supabase = createClient(supabaseUrl, serviceKey)
