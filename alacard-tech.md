@@ -925,7 +925,7 @@ async def websocket_endpoint(websocket: WebSocket, task_id: str):
 // apps/web/lib/websocket-client.ts
 class WebSocketClient {
   constructor(taskId: string) {
-    this.ws = new WebSocket(`ws://localhost:8000/ws/${taskId}`)
+    this.ws = new WebSocket(`${process.env.NEXT_PUBLIC_BACKEND_URL || 'https://alacard.onrender.com'}`.replace('https://', 'wss://').replace('http://', 'ws://') + `/ws/${taskId}`)
   }
 
   onProgress(callback: (status: any) => void) {

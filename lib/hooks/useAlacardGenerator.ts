@@ -256,7 +256,8 @@ export const useAlacardGenerator = () => {
     }
   };
 
-  const canGenerate = Boolean(selectedCards.model && selectedCards.prompt && selectedCards.topic && selectedCards.difficulty);
+  // Allow generation with just a model (simplified for custom models)
+  const canGenerate = Boolean(selectedCards.model);
 
   const resetGeneration = () => {
     setGenerationState({

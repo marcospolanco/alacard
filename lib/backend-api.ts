@@ -44,7 +44,7 @@ export interface NotebookResponse {
 }
 
 export class BackendAPI {
-  private static baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000/api/v1'
+  private static baseUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL || 'https://alacard.onrender.com'}/api/v1`
 
   static async getPopularModels(): Promise<ModelInfo[]> {
     try {
@@ -190,7 +190,7 @@ export class BackendAPI {
 
   // WebSocket connection for real-time progress
   static createWebSocketConnection(taskId: string): WebSocket {
-    const wsBaseUrl = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8000/ws'
+    const wsBaseUrl = process.env.NEXT_PUBLIC_WS_URL || `${process.env.NEXT_PUBLIC_BACKEND_URL || 'https://alacard.onrender.com'}`.replace('https://', 'wss://').replace('http://', 'ws://') + '/ws'
     const wsUrl = `${wsBaseUrl}/progress/${taskId}`
     return new WebSocket(wsUrl)
   }

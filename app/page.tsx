@@ -29,6 +29,73 @@ export default function Home() {
     loadModels
   } = useAlacardGenerator();
 
+  // State for custom model input
+  const [customModelInput, setCustomModelInput] = useState('');
+  const [modelValidation, setModelValidation] = useState<{
+    isValid: boolean;
+    message: string;
+    isValidating: boolean;
+  }>({ isValid: false, message: '', isValidating: false });
+
+  // Validate HuggingFace model ID format
+  const validateModelId = (modelId: string): boolean => {
+    // Basic validation: should contain at least one slash and alphanumeric characters
+    const modelIdRegex = /^[a-zA-Z0-9_-]+\/[a-zA-Z0-9_.-]+$/;
+    return modelIdRegex.test(modelId);
+  };
+
+  // Validate model exists on HuggingFace
+  const validateModelExists = async (modelId: string): Promise<boolean> => {
+    try {
+      const response = await fetch(`https://huggingface.co/api/models/${modelId}`, {
+        method: 'HEAD', // Just check if it exists
+        mode: 'no-cors' // Avoid CORS issues
+      });
+      return true; // If we can make the request, assume it exists
+    } catch (error) {
+      return false;
+    }
+  };
+
+  // Handle custom model input
+  const handleCustomModelSubmit = async () => {
+    const modelId = customModelInput.trim();
+    if (!modelId) return;
+
+    setModelValidation({ isValid: false, message: '', isValidating: true });
+
+    // Basic format validation
+    if (!validateModelId(modelId)) {
+      setModelValidation({
+        isValid: false,
+        message: 'Invalid format. Use format like "username/model-name"',
+        isValidating: false
+      });
+      return;
+    }
+
+    // Create custom model object
+    const customModel = {
+      id: modelId,
+      modelId: modelId,
+      name: modelId.split('/').pop() || modelId,
+      description: `Custom model: ${modelId}`,
+      pipeline_tag: 'text-generation', // Default assumption
+      downloads: 0,
+      likes: 0,
+      tags: ['custom']
+    };
+
+    // Select the model
+    handleCardSelect('model', customModel);
+    setCustomModelInput('');
+    setModelValidation({
+      isValid: true,
+      message: `✅ Custom model selected: ${modelId}`,
+      isValidating: false
+    });
+  };
+
   // Show share page if requested
   if (showSharePage && generationState.taskId) {
     // Create a simple share page view
@@ -231,15 +298,86 @@ export default function Home() {
           <h2 className="text-3xl font-semibold text-gray-900 mb-6">
             🤖 Choose a Model
           </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {models.map(model => (
-              <ModelCard
-                key={model.id}
-                model={model}
-                isSelected={selectedCards.model?.id === model.id}
-                onSelect={() => handleCardSelect('model', model)}
+          
+          {/* Custom Model Input */}
+          <div className="mb-8 p-6 bg-white rounded-lg shadow-sm border border-gray-200">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">
+              🔧 Use Custom Model
+            </h3>
+            <p className="text-sm text-gray-600 mb-4">
+              Enter any HuggingFace model ID to generate a notebook (e.g., "openai-community/gpt2", "microsoft/DialoGPT-medium")
+            </p>
+            <div className="flex gap-4">
+              <input
+                type="text"
+                placeholder="e.g., openai-community/gpt2"
+                value={customModelInput}
+                onChange={(e) => setCustomModelInput(e.target.value)}
+                className={`flex-1 px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
+                  modelValidation.isValid ? 'border-green-300 bg-green-50' : 
+                  modelValidation.message && !modelValidation.isValid ? 'border-red-300 bg-red-50' : 
+                  'border-gray-300'
+                }`}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    handleCustomModelSubmit();
+                  }
+                }}
               />
-            ))}
+              <button
+                className="px-6 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                onClick={handleCustomModelSubmit}
+                disabled={!customModelInput.trim() || modelValidation.isValidating}
+              >
+                {modelValidation.isValidating ? (
+                  <>
+                    <LoadingSpinner />
+                    <span className="ml-2">Validating...</span>
+                  </>
+                ) : (
+                  'Add Model'
+                )}
+              </button>
+            </div>
+            
+            {/* Validation Messages */}
+            {modelValidation.message && (
+              <div className={`mt-4 p-3 rounded-lg border ${
+                modelValidation.isValid ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'
+              }`}>
+                <div className={`text-sm ${
+                  modelValidation.isValid ? 'text-green-800' : 'text-red-800'
+                }`}>
+                  {modelValidation.message}
+                </div>
+              </div>
+            )}
+            
+            {/* Selected Custom Model Display */}
+            {selectedCards.model?.tags?.includes('custom') && (
+              <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                <div className="text-sm text-blue-800">
+                  ✅ Custom model selected: <span className="font-mono">{selectedCards.model.modelId}</span>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Popular Models */}
+          <div className="mb-4">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">
+              📚 Popular Models
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {models.map(model => (
+                <ModelCard
+                  key={model.id}
+                  model={model}
+                  isSelected={selectedCards.model?.id === model.id}
+                  onSelect={() => handleCardSelect('model', model)}
+                />
+              ))}
+            </div>
           </div>
         </section>
 

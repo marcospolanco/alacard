@@ -19,10 +19,15 @@ import time
 import sys
 import subprocess
 import signal
+import os
 from typing import Dict, Any, Optional
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 # Configuration
-BASE_URL = "http://localhost:8000"
+BASE_URL = os.getenv("NEXT_PUBLIC_BACKEND_URL", "https://alacard.onrender.com")
 API_BASE = f"{BASE_URL}/api/v1/notebooks"
 
 # Colors for output

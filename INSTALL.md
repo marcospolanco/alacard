@@ -130,7 +130,7 @@ SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 HF_API_TOKEN=your-huggingface-token
 
 # FastAPI Backend Configuration
-NEXT_PUBLIC_API_URL=http://localhost:8000
+NEXT_PUBLIC_API_URL=https://alacard.onrender.com
 ```
 
 ### Backend (packages/backend/.env)
