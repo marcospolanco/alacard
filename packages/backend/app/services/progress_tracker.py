@@ -21,32 +21,15 @@ class ProgressTracker:
         return None
 
     def get_task_result(self, task_id: str) -> Optional[Dict[str, Any]]:
-        """Get the final result of a task"""
-        from celery.result import AsyncResult
-        from app.core.celery_app import celery_app
-
+        """Get the final result of a task (direct invocation version)"""
         try:
-            result = AsyncResult(task_id, app=celery_app)
-
-            if result.ready():
-                if result.successful():
-                    return result.get()
-                else:
-                    return {
-                        "status": "failed",
-                        "error": str(result.info) if result.info else "Unknown error"
-                    }
-            else:
-                # Return current progress
-                progress = self.get_progress(task_id)
-                if progress:
-                    return {
-                        "status": "processing",
-                        **progress
-                    }
-                return None
+            # Return current progress
+            progress = self.get_progress(task_id)
+            if progress:
+                return progress
+            return None
         except Exception as e:
-            # If there's an error getting the result (like corrupted data), return a failure status
+            # If there's an error getting the result, return a failure status
             return {
                 "status": "failed",
                 "error": f"Unable to retrieve task result: {str(e)}"

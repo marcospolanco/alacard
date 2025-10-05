@@ -1,5 +1,8 @@
 import json
 import uuid
+import logging
+import traceback
+import sys
 from celery import current_task
 from app.core.celery_app import celery_app
 from app.core.database import db
@@ -9,13 +12,34 @@ from app.services.notebook_validator import NotebookValidator
 import asyncio
 from typing import Dict, Any
 
+# Set up logging for this module
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+
+# Also log to file for debugging
+file_handler = logging.FileHandler('/tmp/celery_tasks.log')
+file_handler.setLevel(logging.DEBUG)
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+file_handler.setFormatter(formatter)
+logger.addHandler(file_handler)
+
 @celery_app.task(bind=True)
-async def generate_notebook_task(self, hf_model_id: str) -> Dict[str, Any]:
+def generate_notebook_task(self, hf_model_id: str) -> Dict[str, Any]:
     """Background task to generate a notebook from a Hugging Face model"""
 
     task_id = self.request.id
+    logger.info(f"Starting notebook generation task {task_id} for model {hf_model_id}")
 
     try:
+        # Test database connection first
+        logger.info("Testing database connection...")
+        try:
+            test_result = db.execute_query("SELECT 1 as test, version() as version")
+            logger.info(f"Database connection successful: {test_result}")
+        except Exception as db_error:
+            logger.error(f"Database connection failed: {db_error}")
+            logger.error(f"Database traceback: {traceback.format_exc()}")
+            raise db_error
         # Update task status
         self.update_state(
             state="PROGRESS",
@@ -37,9 +61,9 @@ async def generate_notebook_task(self, hf_model_id: str) -> Dict[str, Any]:
             }
         )
 
-        # Run async methods in sync context
+        # Run methods using asyncio.run() to handle async methods
         try:
-            model_info = await hf_service.get_model_info(hf_model_id)
+            model_info = asyncio.run(hf_service.get_model_info(hf_model_id))
             if not model_info:
                 raise ValueError(f"Model {hf_model_id} not found")
 
@@ -53,7 +77,7 @@ async def generate_notebook_task(self, hf_model_id: str) -> Dict[str, Any]:
             )
 
             generator = NotebookGenerator()
-            notebook_data = await generator.generate_notebook(hf_model_id)
+            notebook_data = asyncio.run(generator.generate_notebook(hf_model_id))
         except Exception as e:
             raise e
 
@@ -67,10 +91,10 @@ async def generate_notebook_task(self, hf_model_id: str) -> Dict[str, Any]:
         )
 
         validator = NotebookValidator()
-        validation_result = await validator.validate_notebook(
+        validation_result = asyncio.run(validator.validate_notebook(
             {"cells": notebook_data["cells"], "metadata": notebook_data["metadata"]},
             hf_model_id
-        )
+        ))
 
         if validation_result["overall_status"] != "success":
             # If validation fails, include validation details in the response
@@ -159,13 +183,18 @@ async def generate_notebook_task(self, hf_model_id: str) -> Dict[str, Any]:
         }
 
     except Exception as e:
+        # Log the full exception with traceback
+        logger.error(f"Task {task_id} failed with error: {str(e)}")
+        logger.error(f"Full traceback: {traceback.format_exc()}")
+
         # Update task status to failed
         self.update_state(
             state="FAILURE",
             meta={
                 "current_step": f"Error: {str(e)}",
                 "progress": 0,
-                "error": str(e)
+                "error": str(e),
+                "traceback": traceback.format_exc()
             }
         )
 

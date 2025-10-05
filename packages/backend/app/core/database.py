@@ -8,29 +8,40 @@ class Database:
     def __init__(self):
         # Parse DATABASE_URL in format: postgresql://user:password@host:port/database
         if settings.DATABASE_URL.startswith("postgresql://"):
-            url = settings.DATABASE_URL[11:]  # Remove 'postgresql://'
-            if "@" in url:
-                credentials, host_port_db = url.split("@")
-                user, password = credentials.split(":")
-                if "/" in host_port_db:
-                    host_port, database = host_port_db.split("/")
-                    if ":" in host_port:
-                        host, port = host_port.split(":")
-                    else:
-                        host = host_port
-                        port = 5432
+            url = settings.DATABASE_URL[len("postgresql://"):]  # Remove 'postgresql://'
 
-                    self.connection_params = {
-                        "host": host,
-                        "database": database,
-                        "user": user,
-                        "password": password,
-                        "port": port
-                    }
+            if "@" in url:
+                credentials, host_port_db = url.split("@", 1)  # Split only on first @
+
+                # Remove any leading slashes from credentials
+                credentials = credentials.lstrip("/")
+
+                if ":" in credentials:
+                    user, password = credentials.split(":", 1)  # Split only on first :
+
+                    if "/" in host_port_db:
+                        host_port, database = host_port_db.split("/", 1)  # Split only on first /
+
+                        if ":" in host_port:
+                            host, port = host_port.split(":", 1)
+                            port = int(port)
+                        else:
+                            host = host_port
+                            port = 5432
+
+                        self.connection_params = {
+                            "host": host,
+                            "database": database,
+                            "user": user,
+                            "password": password,
+                            "port": port
+                        }
+                    else:
+                        raise ValueError("Invalid DATABASE_URL format - missing database")
                 else:
-                    raise ValueError("Invalid DATABASE_URL format")
+                    raise ValueError("Invalid DATABASE_URL format - missing password separator")
             else:
-                raise ValueError("Invalid DATABASE_URL format - missing credentials")
+                raise ValueError("Invalid DATABASE_URL format - missing credentials separator")
         else:
             raise ValueError("DATABASE_URL must start with 'postgresql://'")
 

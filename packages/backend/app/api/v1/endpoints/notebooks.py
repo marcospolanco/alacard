@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException, BackgroundTasks
-from app.tasks.notebook_tasks import generate_notebook_task
+# from app.tasks.notebook_tasks import generate_notebook_task  # DISABLED: Using direct invocation
 from app.services.progress_tracker import progress_tracker
 from app.core.database import db
 from app.models.notebook import (
@@ -10,19 +10,152 @@ from app.models.notebook import (
 )
 from typing import Dict, Any
 import json
+import uuid
+import asyncio
 
 router = APIRouter()
 
 @router.post("/generate", response_model=NotebookGenerationResponse)
-async def generate_notebook(request: NotebookGenerationRequest):
-    """Start notebook generation task"""
-    # Start background task
-    task = generate_notebook_task.delay(request.hf_model_id)
+async def generate_notebook(request: NotebookGenerationRequest, background_tasks: BackgroundTasks):
+    """Start notebook generation task (direct invocation version)"""
+    # Generate task ID
+    task_id = str(uuid.uuid4())
+
+    # Start notebook generation in background task (direct invocation)
+    background_tasks.add_task(generate_notebook_direct, task_id, request.hf_model_id)
 
     return NotebookGenerationResponse(
-        task_id=task.id,
-        estimated_time=30
+        task_id=task_id,
+        estimated_time=60  # Longer timeout for direct invocation
     )
+
+async def generate_notebook_direct(task_id: str, hf_model_id: str):
+    """Direct invocation version of notebook generation (replaces Celery task)"""
+    try:
+        # Import here to avoid circular imports
+        from app.services.notebook_generator import NotebookGenerator
+        from app.services.huggingface import HuggingFaceService
+        from app.services.notebook_validator import NotebookValidator
+
+        # Update initial progress
+        progress_tracker.update_progress(task_id, {
+            "status": "processing",
+            "current_step": "Initializing notebook generation",
+            "progress": 10
+        })
+
+        # Initialize services
+        hf_service = HuggingFaceService()
+
+        # Step 1: Get model info
+        progress_tracker.update_progress(task_id, {
+            "status": "processing",
+            "current_step": "Fetching model information",
+            "progress": 20
+        })
+
+        model_info = await hf_service.get_model_info(hf_model_id)
+        if not model_info:
+            raise ValueError(f"Model {hf_model_id} not found")
+
+        # Step 2: Generate notebook content
+        progress_tracker.update_progress(task_id, {
+            "status": "processing",
+            "current_step": "Generating notebook cells",
+            "progress": 40
+        })
+
+        generator = NotebookGenerator()
+        notebook_data = await generator.generate_notebook(hf_model_id)
+
+        # Step 3: Validate notebook execution
+        progress_tracker.update_progress(task_id, {
+            "status": "processing",
+            "current_step": "Validating notebook execution",
+            "progress": 60
+        })
+
+        validator = NotebookValidator()
+        validation_result = await validator.validate_notebook(
+            {"cells": notebook_data["cells"], "metadata": notebook_data["metadata"]},
+            hf_model_id
+        )
+
+        if validation_result["overall_status"] != "success":
+            # If validation fails, include validation details in the response
+            progress_tracker.update_progress(task_id, {
+                "status": "failed",
+                "current_step": f"Notebook validation failed: {len(validation_result['syntax_errors'])} syntax errors, {len(validation_result['runtime_errors'])} runtime errors",
+                "progress": 0,
+                "validation_errors": validation_result,
+                "error": "Generated notebook failed validation"
+            })
+            return
+
+        # Step 5: Create share ID
+        progress_tracker.update_progress(task_id, {
+            "status": "processing",
+            "current_step": "Creating share link",
+            "progress": 75
+        })
+
+        share_id = str(uuid.uuid4())[:8]  # Short share ID
+
+        # Step 6: Save to database
+        progress_tracker.update_progress(task_id, {
+            "status": "processing",
+            "current_step": "Saving to database",
+            "progress": 90
+        })
+
+        # Prepare metadata including validation results
+        enhanced_metadata = notebook_data["metadata"].copy()
+        enhanced_metadata["validation"] = {
+            "overall_status": validation_result["overall_status"],
+            "cells_validated": len(validation_result["cells_validated"]),
+            "syntax_errors": len(validation_result["syntax_errors"]),
+            "runtime_errors": len(validation_result["runtime_errors"]),
+            "model_loading_success": validation_result["model_loading_success"],
+            "validation_timestamp": validation_result["validation_timestamp"]
+        }
+
+        query = """
+        INSERT INTO notebooks (share_id, hf_model_id, notebook_content, metadata)
+        VALUES (%s, %s, %s, %s)
+        RETURNING id, created_at
+        """
+
+        result = db.execute_single_query(
+            query,
+            (share_id, hf_model_id, json.dumps(notebook_data["cells"]), json.dumps(enhanced_metadata))
+        )
+
+        # Step 7: Complete
+        progress_tracker.update_progress(task_id, {
+            "status": "completed",
+            "current_step": f"Notebook generated and validated successfully ({validation_result['cells_validated']} cells validated)",
+            "progress": 100,
+            "share_id": share_id,
+            "notebook_id": str(result["id"]),
+            "validation": {
+                "overall_status": validation_result["overall_status"],
+                "cells_validated": len(validation_result["cells_validated"]),
+                "syntax_errors": len(validation_result["syntax_errors"]),
+                "runtime_errors": len(validation_result["runtime_errors"]),
+                "model_loading_success": validation_result["model_loading_success"]
+            }
+        })
+
+    except Exception as e:
+        # Update task status to failed
+        import traceback
+        progress_tracker.update_progress(task_id, {
+            "status": "failed",
+            "current_step": f"Error: {str(e)}",
+            "progress": 0,
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        })
 
 @router.get("/task/{task_id}", response_model=TaskStatus)
 async def get_task_status(task_id: str):
