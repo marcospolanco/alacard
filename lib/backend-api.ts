@@ -39,7 +39,7 @@ export interface NotebookResponse {
 }
 
 export class BackendAPI {
-  private static baseUrl = 'http://localhost:8000/api/v1'
+  private static baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000/api/v1'
 
   static async getPopularModels(): Promise<ModelInfo[]> {
     try {
@@ -185,7 +185,8 @@ export class BackendAPI {
 
   // WebSocket connection for real-time progress
   static createWebSocketConnection(taskId: string): WebSocket {
-    const wsUrl = `ws://localhost:8000/ws/progress/${taskId}`
+    const wsBaseUrl = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8000/ws'
+    const wsUrl = `${wsBaseUrl}/progress/${taskId}`
     return new WebSocket(wsUrl)
   }
 }
