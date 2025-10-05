@@ -54,7 +54,12 @@ async def generate_notebook_direct(task_id: str, hf_model_id: str):
             "progress": 20
         })
 
+        print(f"[DEBUG] Attempting to get model info for: {hf_model_id}")
         model_info = await hf_service.get_model_info(hf_model_id)
+        print(f"[DEBUG] Model info result: {model_info is not None}")
+        if model_info:
+            print(f"[DEBUG] Model info keys: {list(model_info.keys()) if isinstance(model_info, dict) else type(model_info)}")
+
         if not model_info:
             raise ValueError(f"Model {hf_model_id} not found")
 
@@ -66,7 +71,17 @@ async def generate_notebook_direct(task_id: str, hf_model_id: str):
         })
 
         generator = NotebookGenerator()
+        print(f"[DEBUG] Starting notebook generation for: {hf_model_id}")
         notebook_data = await generator.generate_notebook(hf_model_id)
+        print(f"[DEBUG] Notebook generation completed. Data type: {type(notebook_data)}")
+        if isinstance(notebook_data, dict):
+            print(f"[DEBUG] Notebook data keys: {list(notebook_data.keys())}")
+            if "cells" in notebook_data:
+                print(f"[DEBUG] Notebook cells count: {len(notebook_data['cells'])}")
+            else:
+                print(f"[DEBUG] No 'cells' key found in notebook data")
+        else:
+            print(f"[DEBUG] Notebook data is not a dict: {notebook_data}")
 
         # Step 3: Validate notebook execution
         progress_tracker.update_progress(task_id, {
@@ -77,12 +92,14 @@ async def generate_notebook_direct(task_id: str, hf_model_id: str):
 
         validator = NotebookValidator()
         validation_result = await validator.validate_notebook(
-            {"cells": notebook_data["cells"], "metadata": notebook_data["metadata"]},
+            notebook_data["notebook_content"],
             hf_model_id
         )
 
+        print(f"[DEBUG] Validation result: {validation_result}")
         if validation_result["overall_status"] != "success":
             # If validation fails, include validation details in the response
+            print(f"[DEBUG] Validation failed - Syntax errors: {len(validation_result.get('syntax_errors', []))}, Runtime errors: {len(validation_result.get('runtime_errors', []))}")
             progress_tracker.update_progress(task_id, {
                 "status": "failed",
                 "current_step": f"Notebook validation failed: {len(validation_result['syntax_errors'])} syntax errors, {len(validation_result['runtime_errors'])} runtime errors",
@@ -127,7 +144,7 @@ async def generate_notebook_direct(task_id: str, hf_model_id: str):
 
         result = db.execute_single_query(
             query,
-            (share_id, hf_model_id, json.dumps(notebook_data["cells"]), json.dumps(enhanced_metadata))
+            (share_id, hf_model_id, json.dumps(notebook_data["notebook_content"]), json.dumps(enhanced_metadata))
         )
 
         # Step 7: Complete

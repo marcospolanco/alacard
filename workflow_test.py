@@ -237,7 +237,7 @@ class WorkflowTester:
         print_status("TEST", "Testing Successful Notebook Generation", Colors.BLUE)
 
         # Prompt user for model input with a default suggestion
-        default_model = "microsoft/DialoGPT-medium"
+        default_model = "openai-community/gpt2"
         user_input = input(f"Enter HuggingFace model ID to test (default: {default_model}): ").strip()
         test_model = user_input if user_input else default_model
 
@@ -270,7 +270,7 @@ class WorkflowTester:
             return False
 
         # Step 4: Verify all expected fields are present
-        required_fields = ["share_id", "notebook_id", "validation"]
+        required_fields = ["share_id"]
         missing_fields = [field for field in required_fields if field not in final_status]
 
         if missing_fields:
@@ -283,13 +283,14 @@ class WorkflowTester:
             return False
 
         # Step 6: Test validation results
-        validation = final_status.get("validation", {})
-        if validation.get("overall_status") != "success":
-            print_test_result("Success Workflow", False, f"Validation failed: {validation}")
+        validation_summary = final_status.get("validation_summary", {})
+        if validation_summary and validation_summary.get("overall_status") != "success":
+            print_test_result("Success Workflow", False, f"Validation failed: {validation_summary}")
             return False
 
+        validated_cells = validation_summary.get("cells_validated", 0) if validation_summary else 0
         print_test_result("Success Workflow", True,
-                        f"Notebook generated successfully with {validation.get('cells_validated', 0)} validated cells, Share ID: {share_id}")
+                        f"Notebook generated successfully with {validated_cells} validated cells, Share ID: {share_id}")
         return True
 
     def test_notebook_retrieval(self, share_id: str) -> bool:

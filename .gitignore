@@ -50,3 +50,6 @@ more-prd-details.txt
 # Local notes (ignored by default)
 notes/
 !notes/.gitkeep
+
+# Generated notebook files for debugging
+generated_notebook_*.ipynb

@@ -6,8 +6,11 @@ from app.core.config import settings
 class HuggingFaceService:
     def __init__(self):
         self.base_url = "https://huggingface.co/api"
-        self.headers = {}
-        if settings.HF_API_TOKEN:
+        self.headers = {
+            "User-Agent": "Alacard-Notebook-Generator/1.0"
+        }
+        # Only add auth token if we have a real one
+        if settings.HF_API_TOKEN and settings.HF_API_TOKEN != "your-huggingface-token":
             self.headers["Authorization"] = f"Bearer {settings.HF_API_TOKEN}"
 
     async def get_popular_models(self) -> List[ModelInfo]:
@@ -60,18 +63,25 @@ class HuggingFaceService:
 
     async def get_model_info(self, model_id: str) -> Optional[ModelInfo]:
         """Get detailed information about a specific model"""
+        print(f"[DEBUG HF Service] Looking for model: {model_id}")
+
         # For now, return from our hardcoded list
         popular_models = await self.get_popular_models()
+        print(f"[DEBUG HF Service] Checking {len(popular_models)} popular models")
         for model in popular_models:
             if model.modelId == model_id:
+                print(f"[DEBUG HF Service] Found model in popular list: {model_id}")
                 return model
 
+        print(f"[DEBUG HF Service] Model not in popular list, trying API...")
         # If not found, try to fetch from API
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.get(f"{self.base_url}/models/{model_id}", headers=self.headers)
+                print(f"[DEBUG HF Service] API response status: {response.status_code}")
                 if response.status_code == 200:
                     data = response.json()
+                    print(f"[DEBUG HF Service] API response keys: {list(data.keys()) if isinstance(data, dict) else type(data)}")
                     return ModelInfo(
                         id=data.get("id", model_id),
                         modelId=data.get("id", model_id),
@@ -82,9 +92,14 @@ class HuggingFaceService:
                         likes=data.get("likes", 0),
                         tags=data.get("tags", [])
                     )
+                else:
+                    print(f"[DEBUG HF Service] API error response: {response.text[:200]}")
         except Exception as e:
-            print(f"Error fetching model info: {e}")
+            print(f"[DEBUG HF Service] Error fetching model info: {e}")
+            import traceback
+            traceback.print_exc()
 
+        print(f"[DEBUG HF Service] Returning None for model: {model_id}")
         return None
 
     async def get_model_readme(self, model_id: str) -> Optional[str]:
