@@ -5,8 +5,8 @@ import './globals.css'
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
-  title: 'Alacard - IKEA assembly layer for AI',
-  description: '🃏 Making 2.1M+ Hugging Face models accessible through interactive notebooks',
+  title: 'Alacard Arena - AI Model Comparison',
+  description: 'Compare AI models head-to-head with visual cards and shareable results',
 }
 
 export default function RootLayout({

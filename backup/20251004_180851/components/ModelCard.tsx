@@ -1,9 +1,9 @@
 'use client'
 
-import { ModelInfo } from '@/lib/backend-api'
+import { ModelCard as ModelCardType } from '@/types'
 
 interface ModelCardProps {
-  model: ModelInfo
+  model: ModelCardType
   isSelected: boolean
   onSelect: () => void
   disabled?: boolean

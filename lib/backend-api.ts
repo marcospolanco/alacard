@@ -1,14 +1,51 @@
-// Backend API client for Alacard
+// Backend API client for Alacard - Updated for FastAPI integration
+
+export interface ModelInfo {
+  id: string;
+  modelId: string;
+  name: string;
+  description: string;
+  pipeline_tag: string;
+  downloads: number;
+  likes: number;
+  tags: string[];
+}
+
+export interface TaskStatus {
+  task_id: string;
+  status: 'processing' | 'completed' | 'failed';
+  progress: number;
+  current_step?: string;
+  message?: string;
+  share_id?: string;
+  error?: string;
+  validation_summary?: {
+    overall_status: string;
+    cells_validated: number;
+    syntax_errors: number;
+    runtime_errors: number;
+    model_loading_success: boolean;
+  };
+}
+
+export interface NotebookResponse {
+  id: string;
+  created_at: string;
+  share_id: string;
+  hf_model_id: string;
+  notebook_content: any;
+  metadata: any;
+  download_count: number;
+}
 
 export class BackendAPI {
-  private static baseUrl = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000'
+  private static baseUrl = 'http://localhost:8000/api/v1'
 
-  static async getPopularModels(): Promise<any[]> {
+  static async getPopularModels(): Promise<ModelInfo[]> {
     try {
-      const response = await fetch(`${this.baseUrl}/api/models/popular`)
+      const response = await fetch(`${this.baseUrl}/models/popular`)
       if (response.ok) {
-        const data = await response.json()
-        return data.models
+        return await response.json()
       }
       throw new Error('Failed to fetch popular models')
     } catch (error) {
@@ -17,12 +54,15 @@ export class BackendAPI {
     }
   }
 
-  static async searchModels(category: string): Promise<any[]> {
+  static async searchModels(category?: string): Promise<ModelInfo[]> {
     try {
-      const response = await fetch(`${this.baseUrl}/api/models/search?category=${category}`)
+      const url = category
+        ? `${this.baseUrl}/models/search?category=${encodeURIComponent(category)}`
+        : `${this.baseUrl}/models/search`
+
+      const response = await fetch(url)
       if (response.ok) {
-        const data = await response.json()
-        return data.models
+        return await response.json()
       }
       throw new Error('Failed to search models')
     } catch (error) {
@@ -31,9 +71,9 @@ export class BackendAPI {
     }
   }
 
-  static async generateNotebook(modelId: string): Promise<{ task_id: string }> {
+  static async generateNotebook(modelId: string): Promise<{ task_id: string; estimated_time: number }> {
     try {
-      const response = await fetch(`${this.baseUrl}/api/notebook/generate`, {
+      const response = await fetch(`${this.baseUrl}/notebooks/generate`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -42,10 +82,10 @@ export class BackendAPI {
       })
 
       if (response.ok) {
-        const data = await response.json()
-        return { task_id: data.share_id }
+        return await response.json()
       }
-      throw new Error('Failed to generate notebook')
+      const errorData = await response.json()
+      throw new Error(errorData.detail || 'Failed to generate notebook')
     } catch (error) {
       console.error('Error generating notebook:', error)
       throw error
@@ -54,7 +94,7 @@ export class BackendAPI {
 
   static async downloadNotebook(shareId: string): Promise<void> {
     try {
-      const response = await fetch(`${this.baseUrl}/api/notebook/download/${shareId}`)
+      const response = await fetch(`${this.baseUrl}/notebooks/${shareId}/download`)
       if (response.ok) {
         const blob = await response.blob()
         const url = window.URL.createObjectURL(blob)
@@ -72,9 +112,9 @@ export class BackendAPI {
     }
   }
 
-  static async getNotebook(shareId: string): Promise<any> {
+  static async getNotebook(shareId: string): Promise<NotebookResponse> {
     try {
-      const response = await fetch(`${this.baseUrl}/api/notebook/${shareId}`)
+      const response = await fetch(`${this.baseUrl}/notebooks/${shareId}`)
       if (response.ok) {
         return await response.json()
       }
@@ -85,9 +125,9 @@ export class BackendAPI {
     }
   }
 
-  static async getTaskStatus(taskId: string): Promise<{ status: string; progress?: number }> {
+  static async getTaskStatus(taskId: string): Promise<TaskStatus> {
     try {
-      const response = await fetch(`${this.baseUrl}/api/task/${taskId}/status`)
+      const response = await fetch(`${this.baseUrl}/notebooks/task/${taskId}`)
       if (response.ok) {
         return await response.json()
       }
@@ -98,8 +138,93 @@ export class BackendAPI {
     }
   }
 
+  static async getNotebookValidation(shareId: string): Promise<any> {
+    try {
+      const response = await fetch(`${this.baseUrl}/notebooks/${shareId}/validation`)
+      if (response.ok) {
+        return await response.json()
+      }
+      throw new Error('Failed to get notebook validation')
+    } catch (error) {
+      console.error('Error getting notebook validation:', error)
+      throw error
+    }
+  }
+
+  // Poll for task completion
+  static async pollTaskCompletion(
+    taskId: string,
+    onProgress?: (status: TaskStatus) => void,
+    pollInterval: number = 2000
+  ): Promise<TaskStatus> {
+    return new Promise((resolve, reject) => {
+      const poll = async () => {
+        try {
+          const status = await this.getTaskStatus(taskId)
+
+          if (onProgress) {
+            onProgress(status)
+          }
+
+          if (status.status === 'completed') {
+            resolve(status)
+          } else if (status.status === 'failed') {
+            reject(new Error(status.error || 'Task failed'))
+          } else {
+            // Continue polling
+            setTimeout(poll, pollInterval)
+          }
+        } catch (error) {
+          reject(error)
+        }
+      }
+
+      poll()
+    })
+  }
+
+  // WebSocket connection for real-time progress
   static createWebSocketConnection(taskId: string): WebSocket {
-    const wsUrl = this.baseUrl.replace(/^http/, 'ws') + `/api/task/${taskId}/ws`
+    const wsUrl = `ws://localhost:8000/ws/progress/${taskId}`
     return new WebSocket(wsUrl)
   }
+}
+
+// Mock data types for the new UI (to be replaced with real data)
+export interface MockModel {
+  id: string;
+  modelId: string;
+  name: string;
+  description: string;
+  pipeline_tag: string;
+  downloads?: number;
+  likes?: number;
+  tags?: string[];
+}
+
+export interface MockPrompt {
+  id: string;
+  name: string;
+  description: string;
+  prompts: string[];
+}
+
+export interface MockTopic {
+  id: string;
+  name: string;
+  description: string;
+  icon: string;
+}
+
+export interface MockDifficulty {
+  id: string;
+  name: string;
+  description: string;
+}
+
+export interface MockComponent {
+  id: string;
+  name: string;
+  description: string;
+  complexity: string;
 }
