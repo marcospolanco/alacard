@@ -4,7 +4,7 @@ celery[redis]
 redis
 websockets
 httpx
-psycopg2-binary
+psycopg[binary]
 pydantic
 pydantic-settings
 python-multipart

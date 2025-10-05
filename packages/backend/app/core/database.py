@@ -1,5 +1,5 @@
-import psycopg2
-from psycopg2.extras import RealDictCursor
+import psycopg
+from psycopg.rows import dict_row
 from app.core.config import settings
 from typing import List, Dict, Any, Optional
 import json
@@ -46,7 +46,7 @@ class Database:
             raise ValueError("DATABASE_URL must start with 'postgresql://'")
 
     def get_connection(self):
-        return psycopg2.connect(**self.connection_params, cursor_factory=RealDictCursor)
+        return psycopg.connect(**self.connection_params, row_factory=dict_row)
 
     def execute_query(self, query: str, params: Optional[tuple] = None) -> List[Dict[str, Any]]:
         conn = self.get_connection()
