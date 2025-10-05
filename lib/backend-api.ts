@@ -33,9 +33,14 @@ export interface NotebookResponse {
   created_at: string;
   share_id: string;
   hf_model_id: string;
+  recipe: any; // Add missing recipe property
   notebook_content: any;
   metadata: any;
+  view_count: number; // Add missing view_count property
   download_count: number;
+  remix_count: number; // Add missing remix_count property
+  is_public: boolean; // Add missing is_public property
+  user_id?: string; // Add optional user_id property
 }
 
 export class BackendAPI {

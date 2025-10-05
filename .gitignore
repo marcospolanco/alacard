@@ -53,3 +53,9 @@ notes/
 
 # Generated notebook files for debugging
 generated_notebook_*.ipynb
+
+# Backup directories
+/backup/
+
+# Figma make directory (separate project)
+/figma make/
